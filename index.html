@@ -33,14 +33,9 @@
         </div>
       </div>
 
-      <div class="role-selector" aria-labelledby="rol-toggle-label">
-        <div class="role-selector-header">
-          <label id="rol-toggle-label" for="rol">Rol</label>
-          <span class="helper-text">Elige el perfil para cargar los nombres disponibles.</span>
-        </div>
-        <div class="role-toggle-group" role="group" aria-labelledby="rol-toggle-label">
-          <button type="button" class="role-toggle" data-role-value="administrador">Administrador</button>
-          <button type="button" class="role-toggle" data-role-value="tutor">Tutor</button>
+        <div>
+          <label>Bloque detectado</label>
+          <div id="bloqueDetectado" class="info-box">Se detectará al registrar</div>
         </div>
         <select id="rol" class="sr-only" aria-hidden="true" tabindex="-1">
           <option value="">Selecciona un rol</option>
@@ -51,10 +46,8 @@
 
       <div class="grid grid-single-mobile">
         <div>
-          <label for="nombre">Nombre</label>
-          <select id="nombre" disabled>
-            <option value="">Primero selecciona un rol</option>
-          </select>
+          <label>Estado detectado</label>
+          <div id="estadoDetectado" class="info-box">Se detectará al registrar</div>
         </div>
       </div>
 

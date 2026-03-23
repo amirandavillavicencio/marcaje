@@ -250,7 +250,11 @@ label {
 
 select,
 textarea,
-button {
+button,
+.info-box {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
   border: 1px solid var(--line);
 }
 
@@ -273,6 +277,14 @@ button:focus,
 .role-toggle:focus {
   outline: 3px solid rgba(22, 58, 99, 0.14);
   border-color: var(--primary);
+}
+
+.info-box {
+  background: #f9fafb;
+  color: var(--secondary);
+  min-height: 46px;
+  display: flex;
+  align-items: center;
 }
 
 textarea {

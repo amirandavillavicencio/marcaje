@@ -29,17 +29,21 @@ const PERSONAS = [
   { nombre: "Cristóbal Darío Molina Cárdenas", rol: "tutor" }
 ];
 
-const BLOCKS = [
-  { nombre: "3-4", inicio: "09:40", fin: "10:50" },
-  { nombre: "5-6", inicio: "11:05", fin: "12:15" },
-  { nombre: "7-8", inicio: "12:30", fin: "13:40" },
-  { nombre: "Bloque de almuerzo", inicio: "13:40", fin: "14:40" },
-  { nombre: "9-10", inicio: "14:40", fin: "15:50" },
-  { nombre: "11-12", inicio: "16:05", fin: "17:15" }
+const BLOQUES = [
+  // Ajustar estos horarios si cambia el horario institucional real.
+  { nombre: "3-4", inicio: "09:40", fin: "11:09" },
+  { nombre: "5-6", inicio: "11:10", fin: "12:39" },
+  { nombre: "almuerzo", inicio: "12:40", fin: "14:09" },
+  { nombre: "7-8", inicio: "14:10", fin: "15:39" },
+  { nombre: "9-10", inicio: "15:40", fin: "17:09" }
 ];
+
+const MINUTOS_PRESENTE = 5;
 
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
+const bloqueDetectadoEl = document.getElementById("bloqueDetectado");
+const estadoDetectadoEl = document.getElementById("estadoDetectado");
 const observacionEl = document.getElementById("observacion");
 const btnRegistrar = document.getElementById("btnRegistrar");
 const btnRegistrarSalida = document.getElementById("btnRegistrarSalida");
@@ -67,9 +71,51 @@ function pad(value) {
   return String(value).padStart(2, "0");
 }
 
-function getFechaLocal(date = new Date()) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function getMinutosDelDia(fecha = new Date()) {
+  return fecha.getHours() * 60 + fecha.getMinutes();
 }
+
+function parseHora(hora) {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
+}
+
+function detectarMarcaje(fecha = new Date()) {
+  const minutosActuales = getMinutosDelDia(fecha);
+
+  for (const bloque of BLOQUES) {
+    const inicio = parseHora(bloque.inicio);
+    const fin = parseHora(bloque.fin);
+
+    if (minutosActuales < inicio || minutosActuales > fin) {
+      continue;
+    }
+
+    return {
+      bloque: bloque.nombre,
+      estado: minutosActuales <= inicio + MINUTOS_PRESENTE - 1 ? "presente" : "atrasado"
+    };
+  }
+
+  return null;
+}
+
+function actualizarDeteccionVisual() {
+  const deteccion = detectarMarcaje();
+
+  if (!deteccion) {
+    bloqueDetectadoEl.textContent = "Sin bloque válido";
+    estadoDetectadoEl.textContent = "No registrable";
+    return;
+  }
+
+  bloqueDetectadoEl.textContent = deteccion.bloque;
+  estadoDetectadoEl.textContent = deteccion.estado;
+}
+
+function poblarNombres() {
+  const rolSeleccionado = rolEl.value;
+  nombreEl.innerHTML = '<option value="">Selecciona una persona</option>';
 
 function getHoraLocal(date = new Date()) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -196,54 +242,27 @@ function populateNames() {
   setMessage("info", "Selecciona una persona y luego registra la entrada o la salida desde este formulario.");
 }
 
-function updateClockPanel() {
-  const now = new Date();
-  const detectedAttendance = getDetectedAttendance(now);
-  const statusLabel = formatStatusLabel(
-    detectedAttendance.status,
-    detectedAttendance.isOutsideBlock
-  );
+async function registrarAsistencia() {
+  const rol = rolEl.value;
+  const nombre = nombreEl.value;
+  const observacion = observacionEl.value.trim();
+  const fecha = getFechaLocal();
+  const deteccion = detectarMarcaje();
 
-  fechaActualEl.textContent = formatFecha(now);
-  horaActualEl.textContent = formatHora(now);
-  bloqueActualEl.textContent = detectedAttendance.blockLabel;
-  estadoPrevistoEl.textContent = statusLabel;
-
-  if (detectedAttendance.isOutsideBlock) {
-    estadoActualEl.textContent = "Bloque detectado: fuera de bloque. Estado esperado: presente.";
+  if (!rol || !nombre) {
+    mensajeEl.textContent = "Completa rol y nombre.";
     return;
   }
 
-  estadoActualEl.textContent = `Bloque detectado: ${detectedAttendance.blockName}. Estado esperado: ${statusLabel.toLowerCase()}.`;
-}
-
-function escapeHtml(value = "") {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function hasStoredTime(value) {
-  return typeof value === "string" ? value.trim() !== "" : Boolean(value);
-}
-
-function formatStoredTime(value) {
-  if (!hasStoredTime(value)) {
-    return "Sin hora";
+  if (!deteccion) {
+    actualizarDeteccionVisual();
+    mensajeEl.textContent = "No se puede registrar: la hora actual no corresponde a ningún bloque válido.";
+    return;
   }
 
-  const parsedDate = new Date(value);
-  if (!Number.isNaN(parsedDate.getTime())) {
-    return new Intl.DateTimeFormat("es-CL", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    }).format(parsedDate);
-  }
+  const { bloque, estado } = deteccion;
+  actualizarDeteccionVisual();
+  mensajeEl.textContent = `Registrando... Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
 
   return String(value).slice(0, 8);
 }
@@ -336,61 +355,8 @@ function renderRecords(records) {
     return;
   }
 
-  listaRegistrosEl.innerHTML = records
-    .map((record) => {
-      const observation = record.observacion
-        ? `<p class="registro-observacion">${escapeHtml(record.observacion)}</p>`
-        : "";
-
-      const statusValue = record.estado_entrada || record.estado;
-      const entryTime = record.hora_entrada || record.hora;
-      const hasExitTime = hasStoredTime(record.hora_salida);
-      const exitTime = hasExitTime ? formatStoredTime(record.hora_salida) : "Sin salida";
-      const exitAction = getExitAction(record);
-      const progressLabel = hasStoredTime(record.hora_salida)
-        ? "Completo"
-        : record.hora_entrada
-          ? "Pendiente salida"
-          : "Entrada";
-      const progressClass = hasStoredTime(record.hora_salida)
-        ? "badge-complete"
-        : record.hora_entrada
-          ? "badge-warn"
-          : "badge-ok";
-
-      return `
-        <article class="registro">
-          <div class="record-main">
-            <div>
-              <h3 class="record-name">${escapeHtml(record.nombre)}</h3>
-              <p class="record-subline">Bloque: ${escapeHtml(record.bloque || "Sin bloque")}</p>
-            </div>
-            <span class="record-role">${escapeHtml(record.rol)}</span>
-          </div>
-          <div class="record-grid">
-            <div class="record-cell">
-              <span class="record-label">Hora</span>
-              <strong>${escapeHtml(formatStoredTime(entryTime))}</strong>
-              <p class="record-subline">Salida: ${escapeHtml(exitTime)}</p>
-            </div>
-            <div class="record-cell">
-              <span class="record-label">Estado</span>
-              <span class="badge ${progressClass}">${escapeHtml(progressLabel)}</span>
-              <p class="record-subline">Marcaje: ${escapeHtml(statusValue || "sin estado")}</p>
-            </div>
-          </div>
-          <div class="registro-actions">
-            ${exitAction}
-          </div>
-          ${observation}
-        </article>
-      `;
-    })
-    .join("");
-}
-
-async function loadTodayRecords() {
-  if (isLoadingList) {
+  if (existente && existente.length > 0) {
+    mensajeEl.textContent = `Esa persona ya fue registrada hoy en el bloque ${bloque}. Estado detectado: ${estado}.`;
     return;
   }
 
@@ -569,89 +535,10 @@ async function registerExit(recordId = null, recordName = null) {
     return;
   }
 
-  const selectedRole = rolEl.value;
-  const selectedName = nombreEl.value;
-  const name = recordName || selectedName;
-  const recordFromState = recordId
-    ? todayRecords.find((record) => String(record.id) === String(recordId))
-    : todayRecords.find((record) => record.nombre === name && record.rol === selectedRole && !hasStoredTime(record.hora_salida));
-  const role = recordFromState?.rol || selectedRole || PERSONAS.find((person) => person.nombre === name)?.rol || "";
-  const now = new Date();
-  const fecha = getFechaLocal(now);
-  const horaSalida = getHoraLocal(now);
-  const horaVisible = formatHora(now);
-  const targetButton = recordId
-    ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
-    : btnRegistrarSalida;
-  const logExitContext = (stage, extra = {}) => {
-    console.debug(`Registrar salida: ${stage}`, {
-      selectedPerson: name,
-      selectedRole: role || null,
-      fecha,
-      ...extra
-    });
-  };
-
-  if (!recordId) {
-    if (!role) {
-      setMessage("error", "Faltan datos para registrar la salida: selecciona un rol.");
-      rolEl.focus();
-      return;
-    }
-
-    if (nombreEl.disabled) {
-      setMessage("error", "Faltan datos para registrar la salida: no hay nombres disponibles para el rol seleccionado.");
-      return;
-    }
-
-    if (!name) {
-      setMessage("error", "Faltan datos para registrar la salida: selecciona una persona.");
-      nombreEl.focus();
-      return;
-    }
-  }
-
-  isSubmitting = true;
-  btnRegistrarSalida.disabled = true;
-  btnAccionPrincipal.disabled = true;
-
-  if (targetButton) {
-    targetButton.disabled = true;
-    targetButton.textContent = "Registrando salida...";
-  }
-
-  if (!recordId) {
-    btnRegistrarSalida.textContent = "Registrando salida...";
-    btnAccionPrincipal.textContent = "Registrando salida...";
-    setMessage("info", `Buscando la entrada abierta de hoy para ${name} y completando su salida.`);
-  } else {
-    setMessage("info", `Registrando la salida del registro de ${name}.`);
-  }
-
-  let previousRecordsSnapshot = null;
-
-  try {
-    let targetRecordId = recordId;
-    let targetRecordName = name;
-
-    if (!targetRecordId) {
-      const searchFilters = {
-        nombre: name,
-        rol: role || null,
-        fecha,
-        hora_entrada: "not.is.null",
-        hora_salida: "is.null o eq.''"
-      };
-      logExitContext("buscando registro abierto", { filters: searchFilters });
-
-      let searchQuery = supabase
-        .from("marcaje_personal")
-        .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida", { count: "exact" })
-        .eq("nombre", name)
-        .eq("fecha", fecha)
-        .not("hora_entrada", "is", null)
-        .order("hora_entrada", { ascending: false })
-        .order("hora", { ascending: false });
+  mensajeEl.textContent = `Asistencia registrada correctamente. Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
+  observacionEl.value = "";
+  await cargarRegistrosHoy();
+}
 
       if (role) {
         searchQuery = searchQuery.eq("rol", role);
@@ -898,8 +785,6 @@ updatePrimaryAction();
 startClock();
 loadTodayRecords();
 
-window.addEventListener("beforeunload", () => {
-  if (clockTimerId) {
-    window.clearInterval(clockTimerId);
-  }
-});
+actualizarDeteccionVisual();
+setInterval(actualizarDeteccionVisual, 30000);
+cargarRegistrosHoy();
