@@ -11,14 +11,14 @@
     <header class="header">
       <p class="eyebrow">CIAC</p>
       <h1>Marcaje de administradores y tutores</h1>
-      <p>Selecciona el rol, el nombre y registra el marcaje. La fecha, hora, bloque y estado se detectan automáticamente desde este equipo.</p>
+      <p>Selecciona el rol, el nombre y registra entrada o salida. La fecha, hora, bloque y estado se detectan automáticamente desde este equipo.</p>
     </header>
 
     <section class="card" aria-labelledby="registro-title">
       <div class="section-heading">
         <div>
           <h2 id="registro-title">Registrar marcaje</h2>
-          <p>Solo se permite un registro por persona, día y bloque.</p>
+          <p>Solo se permite un registro por persona, día, bloque y tipo de marcaje.</p>
         </div>
         <div class="status-panel" id="resumenBloque" aria-live="polite">
           <span class="status-label">Bloque actual</span>
@@ -55,7 +55,7 @@
           <strong id="horaActual">--:--</strong>
         </div>
         <div class="info-box">
-          <span class="info-label">Estado esperado</span>
+          <span class="info-label">Estado esperado entrada</span>
           <strong id="estadoPrevisto">Pendiente</strong>
         </div>
       </div>
@@ -65,8 +65,9 @@
         <textarea id="observacion" rows="3" placeholder="Opcional"></textarea>
       </div>
 
-      <div class="actions">
-        <button id="btnRegistrar">Registrar marcaje</button>
+      <div class="actions actions-double">
+        <button id="btnRegistrarEntrada">Registrar entrada</button>
+        <button id="btnRegistrarSalida" class="secondary-action">Registrar salida</button>
       </div>
       <p id="mensaje" class="mensaje" role="status" aria-live="polite"></p>
     </section>
@@ -75,7 +76,7 @@
       <div class="list-header">
         <div>
           <h2 id="registros-title">Registros de hoy</h2>
-          <p id="subtituloLista">Listado ordenado por hora de marcaje.</p>
+          <p id="subtituloLista">Listado ordenado por hora de marcaje, incluyendo entrada y salida.</p>
         </div>
         <button id="btnActualizar" class="secondary">Actualizar</button>
       </div>
