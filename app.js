@@ -30,10 +30,19 @@ const personas = [
   { nombre: "Cristóbal Darío Molina Cárdenas", rol: "tutor" }
 ];
 
+const BLOQUES = [
+  { nombre: "3-4", inicio: "09:40", fin: "10:50" },
+  { nombre: "5-6", inicio: "11:05", fin: "12:15" },
+  { nombre: "7-8", inicio: "12:30", fin: "13:40" },
+  { nombre: "almuerzo", inicio: "13:40", fin: "14:40", etiqueta: "Bloque de almuerzo" },
+  { nombre: "9-10", inicio: "14:40", fin: "15:50" },
+  { nombre: "11-12", inicio: "16:05", fin: "17:15" }
+];
+
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
-const bloqueEl = document.getElementById("bloque");
-const estadoEl = document.getElementById("estado");
+const bloqueInfoEl = document.getElementById("bloqueInfo");
+const estadoInfoEl = document.getElementById("estadoInfo");
 const observacionEl = document.getElementById("observacion");
 const btnRegistrar = document.getElementById("btnRegistrar");
 const btnActualizar = document.getElementById("btnActualizar");
@@ -46,6 +55,59 @@ function getFechaLocal() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getMinutosDelDia(fecha) {
+  return fecha.getHours() * 60 + fecha.getMinutes();
+}
+
+function convertirHoraAMinutos(hora) {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
+}
+
+function getMarcajeActual() {
+  const ahora = new Date();
+  const minutosActuales = getMinutosDelDia(ahora);
+
+  const bloqueActual = BLOQUES.find((bloque) => {
+    const inicio = convertirHoraAMinutos(bloque.inicio);
+    const fin = convertirHoraAMinutos(bloque.fin);
+    return minutosActuales >= inicio && minutosActuales < fin;
+  });
+
+  if (!bloqueActual) {
+    return {
+      valido: false,
+      mensaje: "La hora actual no corresponde a un bloque válido. No se registró asistencia."
+    };
+  }
+
+  const inicioBloque = convertirHoraAMinutos(bloqueActual.inicio);
+  const minutosDesdeInicio = minutosActuales - inicioBloque;
+  const estado = minutosDesdeInicio <= 5 ? "presente" : "atrasado";
+
+  return {
+    valido: true,
+    bloque: bloqueActual.nombre,
+    etiquetaBloque: bloqueActual.etiqueta || bloqueActual.nombre,
+    estado,
+    rango: `${bloqueActual.inicio} a ${bloqueActual.fin}`
+  };
+}
+
+function actualizarResumenMarcaje() {
+  const marcaje = getMarcajeActual();
+
+  if (!marcaje.valido) {
+    bloqueInfoEl.value = "Fuera de horario";
+    estadoInfoEl.value = "Sin registro";
+    return marcaje;
+  }
+
+  bloqueInfoEl.value = `${marcaje.etiquetaBloque} (${marcaje.rango})`;
+  estadoInfoEl.value = marcaje.estado === "atrasado" ? "Atrasado" : "Presente";
+  return marcaje;
 }
 
 function poblarNombres() {
@@ -67,13 +129,18 @@ function poblarNombres() {
 async function registrarAsistencia() {
   const rol = rolEl.value;
   const nombre = nombreEl.value;
-  const bloque = bloqueEl.value;
-  const estado = estadoEl.value;
   const observacion = observacionEl.value.trim();
   const fecha = getFechaLocal();
+  const hora = new Date().toISOString();
+  const marcaje = actualizarResumenMarcaje();
 
-  if (!rol || !nombre || !bloque) {
-    mensajeEl.textContent = "Completa rol, nombre y bloque.";
+  if (!rol || !nombre) {
+    mensajeEl.textContent = "Completa rol y nombre.";
+    return;
+  }
+
+  if (!marcaje.valido) {
+    mensajeEl.textContent = marcaje.mensaje;
     return;
   }
 
@@ -85,7 +152,7 @@ async function registrarAsistencia() {
     .eq("nombre", nombre)
     .eq("rol", rol)
     .eq("fecha", fecha)
-    .eq("bloque", bloque)
+    .eq("bloque", marcaje.bloque)
     .limit(1);
 
   if (errorBusqueda) {
@@ -106,8 +173,9 @@ async function registrarAsistencia() {
         nombre,
         rol,
         fecha,
-        bloque,
-        estado,
+        hora,
+        bloque: marcaje.bloque,
+        estado: marcaje.estado,
         observacion,
         registrado_por: "recepcion"
       }
@@ -119,8 +187,10 @@ async function registrarAsistencia() {
     return;
   }
 
-  mensajeEl.textContent = "Asistencia registrada correctamente.";
+  const textoEstado = marcaje.estado === "atrasado" ? "atrasado" : "presente";
+  mensajeEl.textContent = `Asistencia registrada en ${marcaje.etiquetaBloque}. Estado: ${textoEstado}.`;
   observacionEl.value = "";
+  actualizarResumenMarcaje();
   await cargarRegistrosHoy();
 }
 
@@ -167,4 +237,6 @@ rolEl.addEventListener("change", poblarNombres);
 btnRegistrar.addEventListener("click", registrarAsistencia);
 btnActualizar.addEventListener("click", cargarRegistrosHoy);
 
+actualizarResumenMarcaje();
+setInterval(actualizarResumenMarcaje, 30000);
 cargarRegistrosHoy();
