@@ -272,7 +272,10 @@ function renderRecords(records) {
 
       const statusValue = record.estado_entrada || record.estado;
       const entryTime = record.hora_entrada || record.hora;
-      const exitTime = record.hora_salida ? formatStoredTime(record.hora_salida) : "Sin salida";
+      const hasExitTime = typeof record.hora_salida === "string"
+        ? record.hora_salida.trim() !== ""
+        : Boolean(record.hora_salida);
+      const exitTime = hasExitTime ? formatStoredTime(record.hora_salida) : "Sin salida";
       const exitAction = getExitAction(record);
 
       return `
@@ -316,6 +319,7 @@ async function loadTodayRecords() {
       .from("marcaje_personal")
       .select("id, nombre, rol, bloque, estado, hora, observacion, hora_entrada, hora_salida, estado_entrada")
       .eq("fecha", fecha)
+      .order("hora_entrada", { ascending: false })
       .order("hora", { ascending: false });
 
     if (error) {
@@ -529,13 +533,15 @@ async function registerExit(recordId = null, recordName = null) {
       targetRecordId = openRecordData[0].id;
     }
 
-    const { error: updateError } = await supabase
+    const normalizedRecordId = Number.isNaN(Number(targetRecordId)) ? targetRecordId : Number(targetRecordId);
+    const { data: updatedRecord, error: updateError } = await supabase
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
-      .eq("id", targetRecordId)
-      .is("hora_salida", null);
+      .eq("id", normalizedRecordId)
+      .select("id, hora_salida")
+      .single();
 
-    if (updateError) {
+    if (updateError || !updatedRecord || !updatedRecord.hora_salida) {
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
