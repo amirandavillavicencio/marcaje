@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_GGE5Mo0YGiIEkDYBsAkH9w_D9yvGQdr";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const personas = [
+const PERSONAS = [
   { nombre: "Daniela María Román Schuffenegger", rol: "administrador" },
   { nombre: "Sofía Valentina Núñez Barrera", rol: "administrador" },
   { nombre: "Sebastián Ignacio Osorio León", rol: "administrador" },
@@ -20,7 +20,6 @@ const personas = [
   { nombre: "Camila Antonia Canales Parraguez", rol: "administrador" },
   { nombre: "Aracely Andrea Rivas Urrutia", rol: "administrador" },
   { nombre: "Catalina Stephania León Cruz", rol: "administrador" },
-
   { nombre: "María Francisca Cruz Jara", rol: "tutor" },
   { nombre: "Kevin Jaramillo", rol: "tutor" },
   { nombre: "Catalina Flores", rol: "tutor" },
@@ -30,141 +29,357 @@ const personas = [
   { nombre: "Cristóbal Darío Molina Cárdenas", rol: "tutor" }
 ];
 
+const BLOCKS = [
+  { nombre: "3-4", inicio: "09:40", fin: "10:50" },
+  { nombre: "5-6", inicio: "11:05", fin: "12:15" },
+  { nombre: "7-8", inicio: "12:30", fin: "13:40" },
+  { nombre: "Bloque de almuerzo", inicio: "13:40", fin: "14:40" },
+  { nombre: "9-10", inicio: "14:40", fin: "15:50" },
+  { nombre: "11-12", inicio: "16:05", fin: "17:15" }
+];
+
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
-const bloqueEl = document.getElementById("bloque");
-const estadoEl = document.getElementById("estado");
 const observacionEl = document.getElementById("observacion");
 const btnRegistrar = document.getElementById("btnRegistrar");
 const btnActualizar = document.getElementById("btnActualizar");
 const mensajeEl = document.getElementById("mensaje");
 const listaRegistrosEl = document.getElementById("listaRegistros");
+const bloqueActualEl = document.getElementById("bloqueActual");
+const estadoActualEl = document.getElementById("estadoActual");
+const fechaActualEl = document.getElementById("fechaActual");
+const horaActualEl = document.getElementById("horaActual");
+const estadoPrevistoEl = document.getElementById("estadoPrevisto");
 
-function getFechaLocal() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+let isSubmitting = false;
+let isLoadingList = false;
+let clockTimerId = null;
+
+function pad(value) {
+  return String(value).padStart(2, "0");
 }
 
-function poblarNombres() {
-  const rolSeleccionado = rolEl.value;
-  nombreEl.innerHTML = '<option value="">Selecciona una persona</option>';
+function getFechaLocal(date = new Date()) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
-  if (!rolSeleccionado) return;
+function getHoraLocal(date = new Date()) {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-  const filtradas = personas.filter((p) => p.rol === rolSeleccionado);
+function formatFecha(date = new Date()) {
+  return new Intl.DateTimeFormat("es-CL", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(date);
+}
 
-  filtradas.forEach((persona) => {
+function formatHora(date = new Date()) {
+  return new Intl.DateTimeFormat("es-CL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+function getMinutesFromTime(time) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function detectBlock(date = new Date()) {
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+
+  return (
+    BLOCKS.find((block) => {
+      const startMinutes = getMinutesFromTime(block.inicio);
+      const endMinutes = getMinutesFromTime(block.fin);
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    }) || null
+  );
+}
+
+function detectStatus(block, date = new Date()) {
+  if (!block) {
+    return null;
+  }
+
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  const startMinutes = getMinutesFromTime(block.inicio);
+
+  return currentMinutes <= startMinutes + 5 ? "presente" : "atrasado";
+}
+
+function setMessage(type, text) {
+  mensajeEl.className = `mensaje ${type}`;
+  mensajeEl.textContent = text;
+}
+
+function resetNameOptions(placeholder) {
+  nombreEl.innerHTML = "";
+  const option = document.createElement("option");
+  option.value = "";
+  option.textContent = placeholder;
+  nombreEl.appendChild(option);
+  nombreEl.value = "";
+}
+
+function populateNames() {
+  const selectedRole = rolEl.value;
+  const availablePeople = PERSONAS
+    .filter((person) => person.rol === selectedRole)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  if (!selectedRole) {
+    nombreEl.disabled = true;
+    resetNameOptions("Primero selecciona un rol");
+    setMessage("info", "Selecciona un rol para habilitar la lista de nombres.");
+    return;
+  }
+
+  if (availablePeople.length === 0) {
+    nombreEl.disabled = true;
+    resetNameOptions("No hay personas disponibles para este rol");
+    setMessage("error", `No hay nombres configurados para el rol ${selectedRole}.`);
+    return;
+  }
+
+  nombreEl.disabled = false;
+  resetNameOptions("Selecciona una persona");
+
+  availablePeople.forEach((person) => {
     const option = document.createElement("option");
-    option.value = persona.nombre;
-    option.textContent = persona.nombre;
+    option.value = person.nombre;
+    option.textContent = person.nombre;
     nombreEl.appendChild(option);
   });
+
+  setMessage("info", "Selecciona una persona y luego registra el marcaje.");
 }
 
-async function registrarAsistencia() {
-  const rol = rolEl.value;
-  const nombre = nombreEl.value;
-  const bloque = bloqueEl.value;
-  const estado = estadoEl.value;
-  const observacion = observacionEl.value.trim();
-  const fecha = getFechaLocal();
+function updateClockPanel() {
+  const now = new Date();
+  const block = detectBlock(now);
+  const status = detectStatus(block, now);
 
-  if (!rol || !nombre || !bloque) {
-    mensajeEl.textContent = "Completa rol, nombre y bloque.";
+  fechaActualEl.textContent = formatFecha(now);
+  horaActualEl.textContent = formatHora(now);
+  bloqueActualEl.textContent = block ? `${block.nombre} (${block.inicio} a ${block.fin})` : "Fuera de bloque";
+  estadoPrevistoEl.textContent = status || "No disponible";
+
+  if (!block) {
+    estadoActualEl.textContent = "Solo se registran marcajes dentro de los bloques oficiales.";
     return;
   }
 
-  mensajeEl.textContent = "Registrando...";
-
-  const { data: existente, error: errorBusqueda } = await supabase
-    .from("marcaje_personal")
-    .select("id")
-    .eq("nombre", nombre)
-    .eq("rol", rol)
-    .eq("fecha", fecha)
-    .eq("bloque", bloque)
-    .limit(1);
-
-  if (errorBusqueda) {
-    console.error(errorBusqueda);
-    mensajeEl.textContent = "Error al validar registro existente.";
-    return;
-  }
-
-  if (existente && existente.length > 0) {
-    mensajeEl.textContent = "Esa persona ya fue registrada hoy en ese bloque.";
-    return;
-  }
-
-  const { error } = await supabase
-    .from("marcaje_personal")
-    .insert([
-      {
-        nombre,
-        rol,
-        fecha,
-        bloque,
-        estado,
-        observacion,
-        registrado_por: "recepcion"
-      }
-    ]);
-
-  if (error) {
-    console.error(error);
-    mensajeEl.textContent = "Error al registrar asistencia.";
-    return;
-  }
-
-  mensajeEl.textContent = "Asistencia registrada correctamente.";
-  observacionEl.value = "";
-  await cargarRegistrosHoy();
+  estadoActualEl.textContent = `Si registras ahora, el estado será ${status}.`;
 }
 
-async function cargarRegistrosHoy() {
-  listaRegistrosEl.innerHTML = "Cargando registros...";
-  const fecha = getFechaLocal();
+function escapeHtml(value = "") {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
-  const { data, error } = await supabase
-    .from("marcaje_personal")
-    .select("nombre, rol, bloque, estado, hora, observacion")
-    .eq("fecha", fecha)
-    .order("hora", { ascending: false });
+function formatStoredTime(value) {
+  if (!value) {
+    return "Sin hora";
+  }
 
-  if (error) {
-    console.error(error);
-    listaRegistrosEl.innerHTML = "No se pudieron cargar los registros.";
+  const parsedDate = new Date(value);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(parsedDate);
+  }
+
+  return String(value).slice(0, 8);
+}
+
+function renderRecords(records) {
+  if (!records || records.length === 0) {
+    listaRegistrosEl.innerHTML = '<div class="empty-state">Todavía no hay registros para hoy.</div>';
     return;
   }
 
-  if (!data || data.length === 0) {
-    listaRegistrosEl.innerHTML = "No hay registros hoy.";
-    return;
-  }
-
-  listaRegistrosEl.innerHTML = data
-    .map((registro) => {
-      const hora = new Date(registro.hora).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
+  listaRegistrosEl.innerHTML = records
+    .map((record) => {
+      const observation = record.observacion
+        ? `<p class="registro-observacion">${escapeHtml(record.observacion)}</p>`
+        : "";
 
       return `
-        <div class="registro">
-          <strong>${registro.nombre}</strong><br>
-          Rol: ${registro.rol} · Bloque: ${registro.bloque} · Estado: ${registro.estado} · Hora: ${hora}
-          ${registro.observacion ? `<br>Obs: ${registro.observacion}` : ""}
-        </div>
+        <article class="registro">
+          <div class="registro-top">
+            <strong>${escapeHtml(record.nombre)}</strong>
+            <span class="registro-hora">${escapeHtml(formatStoredTime(record.hora))}</span>
+          </div>
+          <div class="registro-meta">
+            <span>${escapeHtml(record.rol)}</span>
+            <span>${escapeHtml(record.bloque)}</span>
+            <span class="badge ${record.estado === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(record.estado)}</span>
+          </div>
+          ${observation}
+        </article>
       `;
     })
     .join("");
 }
 
-rolEl.addEventListener("change", poblarNombres);
-btnRegistrar.addEventListener("click", registrarAsistencia);
-btnActualizar.addEventListener("click", cargarRegistrosHoy);
+async function loadTodayRecords() {
+  if (isLoadingList) {
+    return;
+  }
 
-cargarRegistrosHoy();
+  isLoadingList = true;
+  btnActualizar.disabled = true;
+  listaRegistrosEl.innerHTML = '<div class="empty-state">Cargando registros de hoy...</div>';
+
+  try {
+    const fecha = getFechaLocal();
+    const { data, error } = await supabase
+      .from("marcaje_personal")
+      .select("nombre, rol, bloque, estado, hora, observacion")
+      .eq("fecha", fecha)
+      .order("hora", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    renderRecords(data || []);
+  } catch (error) {
+    console.error(error);
+    listaRegistrosEl.innerHTML = '<div class="empty-state error-state">No se pudieron cargar los registros del día. Intenta nuevamente.</div>';
+  } finally {
+    isLoadingList = false;
+    btnActualizar.disabled = false;
+  }
+}
+
+async function registerAttendance() {
+  if (isSubmitting) {
+    return;
+  }
+
+  const role = rolEl.value;
+  const name = nombreEl.value;
+  const observation = observacionEl.value.trim();
+  const now = new Date();
+  const fecha = getFechaLocal(now);
+  const hora = now.toISOString();
+  const horaVisible = formatHora(now);
+  const block = detectBlock(now);
+
+  if (!role) {
+    setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
+    rolEl.focus();
+    return;
+  }
+
+  if (nombreEl.disabled) {
+    setMessage("error", "No hay nombres disponibles para el rol seleccionado.");
+    return;
+  }
+
+  if (!name) {
+    setMessage("error", "Selecciona una persona antes de registrar el marcaje.");
+    nombreEl.focus();
+    return;
+  }
+
+  if (!block) {
+    setMessage("error", "No es posible registrar fuera de los bloques oficiales. Intenta nuevamente dentro de un bloque válido.");
+    return;
+  }
+
+  const status = detectStatus(block, now);
+
+  isSubmitting = true;
+  btnRegistrar.disabled = true;
+  btnRegistrar.textContent = "Registrando...";
+  setMessage("info", `Validando registro para ${name} en el bloque ${block.nombre}...`);
+
+  try {
+    const { data: existingRecord, error: searchError } = await supabase
+      .from("marcaje_personal")
+      .select("id")
+      .eq("nombre", name)
+      .eq("rol", role)
+      .eq("fecha", fecha)
+      .eq("bloque", block.nombre)
+      .limit(1);
+
+    if (searchError) {
+      throw new Error("No fue posible validar si ya existe un marcaje previo.");
+    }
+
+    if (existingRecord && existingRecord.length > 0) {
+      setMessage(
+        "error",
+        `Ya existe un marcaje para ${name} como ${role} hoy en el bloque ${block.nombre}. No se registró un duplicado.`
+      );
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("marcaje_personal").insert([
+      {
+        nombre: name,
+        rol: role,
+        fecha,
+        bloque: block.nombre,
+        estado: status,
+        observacion: observation,
+        hora,
+        registrado_por: "recepcion"
+      }
+    ]);
+
+    if (insertError) {
+      throw new Error("Supabase no pudo guardar el marcaje. Revisa la conexión e intenta nuevamente.");
+    }
+
+    setMessage(
+      "success",
+      `Marcaje registrado correctamente para ${name}. Bloque detectado: ${block.nombre}. Estado: ${status}. Hora: ${horaVisible}.`
+    );
+    observacionEl.value = "";
+    await loadTodayRecords();
+  } catch (error) {
+    console.error(error);
+    setMessage("error", error.message || "Ocurrió un problema inesperado al registrar el marcaje.");
+  } finally {
+    isSubmitting = false;
+    btnRegistrar.disabled = false;
+    btnRegistrar.textContent = "Registrar marcaje";
+    updateClockPanel();
+  }
+}
+
+function startClock() {
+  updateClockPanel();
+  clockTimerId = window.setInterval(updateClockPanel, 1000);
+}
+
+rolEl.addEventListener("change", populateNames);
+btnRegistrar.addEventListener("click", registerAttendance);
+btnActualizar.addEventListener("click", loadTodayRecords);
+
+populateNames();
+startClock();
+loadTodayRecords();
+
+window.addEventListener("beforeunload", () => {
+  if (clockTimerId) {
+    window.clearInterval(clockTimerId);
+  }
+});
