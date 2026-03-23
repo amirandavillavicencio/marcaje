@@ -237,6 +237,27 @@ function formatStoredTime(value) {
   return String(value).slice(0, 8);
 }
 
+function getExitAction(record) {
+  if (record.hora_entrada && !record.hora_salida) {
+    return `
+      <button
+        class="registro-salida-btn secondary-action"
+        data-action="registrar-salida"
+        data-record-id="${record.id}"
+        data-record-name="${escapeHtml(record.nombre)}"
+      >
+        Registrar salida
+      </button>
+    `;
+  }
+
+  if (record.hora_salida) {
+    return '<span class="registro-salida-status">Salida registrada</span>';
+  }
+
+  return "";
+}
+
 function renderRecords(records) {
   if (!records || records.length === 0) {
     listaRegistrosEl.innerHTML = '<div class="empty-state">Todavía no hay registros para hoy.</div>';
@@ -252,6 +273,7 @@ function renderRecords(records) {
       const statusValue = record.estado_entrada || record.estado;
       const entryTime = record.hora_entrada || record.hora;
       const exitTime = record.hora_salida ? formatStoredTime(record.hora_salida) : "Sin salida";
+      const exitAction = getExitAction(record);
 
       return `
         <article class="registro">
@@ -268,6 +290,9 @@ function renderRecords(records) {
             <span>Hora entrada: ${escapeHtml(formatStoredTime(entryTime))}</span>
             <span>Hora salida: ${escapeHtml(exitTime)}</span>
             <span>Estado entrada: ${escapeHtml(statusValue || "sin estado")}</span>
+          </div>
+          <div class="registro-actions">
+            ${exitAction}
           </div>
           ${observation}
         </article>
@@ -409,92 +434,112 @@ async function registerAttendance() {
   }
 }
 
-async function registerExit() {
+async function registerExit(recordId = null, recordName = null) {
   if (isSubmitting) {
     return;
   }
 
   const role = rolEl.value;
-  const name = nombreEl.value;
+  const name = recordName || nombreEl.value;
   const now = new Date();
   const fecha = getFechaLocal(now);
   const horaSalida = now.toISOString();
   const horaVisible = formatHora(now);
+  const targetButton = recordId
+    ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
+    : btnRegistrarSalida;
 
-  if (!role) {
-    setMessage("error", "Faltan datos para registrar la salida: selecciona un rol.");
-    rolEl.focus();
-    return;
-  }
+  if (!recordId) {
+    if (!role) {
+      setMessage("error", "Faltan datos para registrar la salida: selecciona un rol.");
+      rolEl.focus();
+      return;
+    }
 
-  if (nombreEl.disabled) {
-    setMessage("error", "Faltan datos para registrar la salida: no hay nombres disponibles para el rol seleccionado.");
-    return;
-  }
+    if (nombreEl.disabled) {
+      setMessage("error", "Faltan datos para registrar la salida: no hay nombres disponibles para el rol seleccionado.");
+      return;
+    }
 
-  if (!name) {
-    setMessage("error", "Faltan datos para registrar la salida: selecciona una persona.");
-    nombreEl.focus();
-    return;
+    if (!name) {
+      setMessage("error", "Faltan datos para registrar la salida: selecciona una persona.");
+      nombreEl.focus();
+      return;
+    }
   }
 
   isSubmitting = true;
   btnRegistrarSalida.disabled = true;
-  btnRegistrarSalida.textContent = "Registrando salida...";
-  setMessage("info", `Buscando la entrada abierta de hoy para ${name} y completando su salida.`);
+
+  if (targetButton) {
+    targetButton.disabled = true;
+    targetButton.textContent = "Registrando salida...";
+  }
+
+  if (!recordId) {
+    btnRegistrarSalida.textContent = "Registrando salida...";
+    setMessage("info", `Buscando la entrada abierta de hoy para ${name} y completando su salida.`);
+  } else {
+    setMessage("info", `Registrando la salida del registro de ${name}.`);
+  }
 
   try {
-    const { data: openRecordData, error: searchError } = await supabase
-      .from("marcaje_personal")
-      .select("id, bloque, hora_entrada, hora_salida")
-      .eq("nombre", name)
-      .eq("rol", role)
-      .eq("fecha", fecha)
-      .not("hora_entrada", "is", null)
-      .is("hora_salida", null)
-      .order("hora", { ascending: false })
-      .limit(1);
+    let targetRecordId = recordId;
 
-    if (searchError) {
-      throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
-    }
-
-    if (!openRecordData || openRecordData.length === 0) {
-      const { data: existingRecord, error: existingRecordError } = await supabase
+    if (!targetRecordId) {
+      const { data: openRecordData, error: searchError } = await supabase
         .from("marcaje_personal")
         .select("id, bloque, hora_entrada, hora_salida")
         .eq("nombre", name)
         .eq("rol", role)
         .eq("fecha", fecha)
         .not("hora_entrada", "is", null)
+        .is("hora_salida", null)
         .order("hora", { ascending: false })
         .limit(1);
 
-      if (existingRecordError) {
+      if (searchError) {
         throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
       }
 
-      if (existingRecord && existingRecord.length > 0 && existingRecord[0].hora_salida) {
-        setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${existingRecord[0].bloque || "sin bloque"}.`);
+      if (!openRecordData || openRecordData.length === 0) {
+        const { data: existingRecord, error: existingRecordError } = await supabase
+          .from("marcaje_personal")
+          .select("id, bloque, hora_entrada, hora_salida")
+          .eq("nombre", name)
+          .eq("rol", role)
+          .eq("fecha", fecha)
+          .not("hora_entrada", "is", null)
+          .order("hora", { ascending: false })
+          .limit(1);
+
+        if (existingRecordError) {
+          throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+        }
+
+        if (existingRecord && existingRecord.length > 0 && existingRecord[0].hora_salida) {
+          setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${existingRecord[0].bloque || "sin bloque"}.`);
+          return;
+        }
+
+        setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada y luego intenta nuevamente.`);
         return;
       }
 
-      setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada y luego intenta nuevamente.`);
-      return;
+      targetRecordId = openRecordData[0].id;
     }
-
-    const openRecord = openRecordData[0];
 
     const { error: updateError } = await supabase
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
-      .eq("id", openRecord.id);
+      .eq("id", targetRecordId)
+      .is("hora_salida", null);
 
     if (updateError) {
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
-    setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro abierto del día. Hora: ${horaVisible}.`);
+    setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
     await loadTodayRecords();
   } catch (error) {
     console.error(error);
@@ -502,6 +547,12 @@ async function registerExit() {
   } finally {
     isSubmitting = false;
     btnRegistrarSalida.disabled = false;
+
+    if (targetButton) {
+      targetButton.disabled = false;
+      targetButton.textContent = "Registrar salida";
+    }
+
     btnRegistrarSalida.textContent = "Registrar salida";
     updateClockPanel();
   }
@@ -516,6 +567,23 @@ rolEl.addEventListener("change", populateNames);
 btnRegistrar.addEventListener("click", registerAttendance);
 btnRegistrarSalida.addEventListener("click", registerExit);
 btnActualizar.addEventListener("click", loadTodayRecords);
+listaRegistrosEl.addEventListener("click", (event) => {
+  const actionButton = event.target.closest('[data-action="registrar-salida"]');
+
+  if (!actionButton) {
+    return;
+  }
+
+  const recordId = Number(actionButton.dataset.recordId);
+  const recordName = actionButton.dataset.recordName || "la persona seleccionada";
+
+  if (!recordId) {
+    setMessage("error", "No se pudo identificar el registro para guardar la salida.");
+    return;
+  }
+
+  registerExit(recordId, recordName);
+});
 
 populateNames();
 startClock();
