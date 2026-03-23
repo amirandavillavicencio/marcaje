@@ -291,6 +291,23 @@ button.secondary {
   line-height: 1.5;
 }
 
+.registro-actions {
+  margin-top: 12px;
+}
+
+.registro-salida-btn {
+  width: auto;
+  padding: 10px 14px;
+}
+
+.registro-salida-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--success-text);
+}
+
 .empty-state {
   color: var(--muted);
 }
