@@ -63,6 +63,7 @@ label {
 }
 
 select,
+input,
 textarea,
 button {
   width: 100%;
@@ -139,4 +140,10 @@ button.secondary {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+
+input[readonly] {
+  background: #f9fafb;
+  color: var(--secondary);
 }
