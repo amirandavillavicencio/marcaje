@@ -226,8 +226,12 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#39;");
 }
 
+function hasStoredTime(value) {
+  return typeof value === "string" ? value.trim() !== "" : Boolean(value);
+}
+
 function formatStoredTime(value) {
-  if (!value) {
+  if (!hasStoredTime(value)) {
     return "Sin hora";
   }
 
@@ -245,7 +249,7 @@ function formatStoredTime(value) {
 }
 
 function getExitAction(record) {
-  if (record.hora_entrada && !record.hora_salida) {
+  if (record.hora_entrada && !hasStoredTime(record.hora_salida)) {
     return `
       <button
         class="registro-salida-btn secondary-action"
@@ -258,7 +262,7 @@ function getExitAction(record) {
     `;
   }
 
-  if (record.hora_salida) {
+  if (hasStoredTime(record.hora_salida)) {
     return '<span class="registro-salida-status">Salida registrada</span>';
   }
 
@@ -288,7 +292,7 @@ function inferUserStatus(records, role, name) {
     };
   }
 
-  const openRecord = matchingRecords.find((record) => record.hora_entrada && !record.hora_salida);
+  const openRecord = matchingRecords.find((record) => record.hora_entrada && !hasStoredTime(record.hora_salida));
   if (openRecord) {
     return {
       code: "pending",
@@ -340,17 +344,15 @@ function renderRecords(records) {
 
       const statusValue = record.estado_entrada || record.estado;
       const entryTime = record.hora_entrada || record.hora;
-      const hasExitTime = typeof record.hora_salida === "string"
-        ? record.hora_salida.trim() !== ""
-        : Boolean(record.hora_salida);
+      const hasExitTime = hasStoredTime(record.hora_salida);
       const exitTime = hasExitTime ? formatStoredTime(record.hora_salida) : "Sin salida";
       const exitAction = getExitAction(record);
-      const progressLabel = record.hora_salida
+      const progressLabel = hasStoredTime(record.hora_salida)
         ? "Completo"
         : record.hora_entrada
           ? "Pendiente salida"
           : "Entrada";
-      const progressClass = record.hora_salida
+      const progressClass = hasStoredTime(record.hora_salida)
         ? "badge-complete"
         : record.hora_entrada
           ? "badge-warn"
@@ -576,7 +578,6 @@ async function registerExit(recordId = null, recordName = null) {
   const targetButton = recordId
     ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
     : btnRegistrarSalida;
-  const hasExitTime = (value) => (typeof value === "string" ? value.trim() !== "" : Boolean(value));
 
   if (!recordId) {
     if (!role) {
@@ -636,12 +637,12 @@ async function registerExit(recordId = null, recordName = null) {
       }
 
       const matchingRecords = (candidateRecords || []).filter((record) => record.nombre === name && (!role || record.rol === role));
-      const openRecord = matchingRecords.find((record) => !hasExitTime(record.hora_salida));
+      const openRecord = matchingRecords.find((record) => !hasStoredTime(record.hora_salida));
 
       if (!openRecord) {
         const latestRecord = matchingRecords[0];
 
-        if (latestRecord && hasExitTime(latestRecord.hora_salida)) {
+        if (latestRecord && hasStoredTime(latestRecord.hora_salida)) {
           setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${latestRecord.bloque || "sin bloque"}.`);
           return;
         }
@@ -658,6 +659,7 @@ async function registerExit(recordId = null, recordName = null) {
       .from("marcaje_personal")
       .select("id, nombre, rol, bloque, fecha, hora_entrada, hora_salida")
       .eq("id", targetRecordId)
+      .eq("nombre", name)
       .eq("fecha", fecha)
       .maybeSingle();
 
@@ -681,7 +683,7 @@ async function registerExit(recordId = null, recordName = null) {
       return;
     }
 
-    if (hasExitTime(recordToUpdate.hora_salida)) {
+    if (hasStoredTime(recordToUpdate.hora_salida)) {
       setMessage("error", `La salida de hoy para ${targetRecordName} ya estaba registrada en el bloque ${recordToUpdate.bloque || "sin bloque"}.`);
       return;
     }
@@ -690,9 +692,10 @@ async function registerExit(recordId = null, recordName = null) {
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
       .eq("id", recordToUpdate.id)
+      .eq("nombre", targetRecordName)
       .eq("fecha", fecha)
-      .is("hora_salida", null)
-      .select("id, hora_salida")
+      .or("hora_salida.is.null,hora_salida.eq.")
+      .select("id, nombre, fecha, hora_salida")
       .maybeSingle();
 
     if (updateError || !updatedRecord) {
@@ -712,7 +715,7 @@ async function registerExit(recordId = null, recordName = null) {
     await refreshRecordsAfterUpdate();
 
     const confirmedRecord = todayRecords.find((record) => String(record.id) === String(recordToUpdate.id));
-    const hasConfirmedExit = hasExitTime(confirmedRecord?.hora_salida);
+    const hasConfirmedExit = hasStoredTime(confirmedRecord?.hora_salida);
 
     if (!hasConfirmedExit) {
       console.error("La recarga no reflejó la salida guardada", { targetRecordId: recordToUpdate.id, confirmedRecord, todayRecords });
