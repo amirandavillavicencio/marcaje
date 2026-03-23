@@ -30,7 +30,6 @@ const PERSONAS = [
 ];
 
 const BLOQUES = [
-  // Ajustar estos horarios si cambia el horario institucional real.
   { nombre: "3-4", inicio: "09:40", fin: "11:09" },
   { nombre: "5-6", inicio: "11:10", fin: "12:39" },
   { nombre: "almuerzo", inicio: "12:40", fin: "14:09" },
@@ -41,7 +40,6 @@ const BLOQUES = [
 const MINUTOS_PRESENTE = 5;
 
 const rolEl = document.getElementById("rol");
-const nombreEl = document.getElementById("nombre");
 const bloqueDetectadoEl = document.getElementById("bloqueDetectado");
 const estadoDetectadoEl = document.getElementById("estadoDetectado");
 const observacionEl = document.getElementById("observacion");
@@ -59,66 +57,62 @@ const btnAccionPrincipal = document.getElementById("btnAccionPrincipal");
 const estadoUsuarioTextoEl = document.getElementById("estadoUsuarioTexto");
 const estadoUsuarioDetalleEl = document.getElementById("estadoUsuarioDetalle");
 const estadoUsuarioPanelEl = document.getElementById("estadoUsuarioPanel");
-const roleToggleEls = Array.from(document.querySelectorAll(".role-toggle"));
 
 let todayRecords = [];
-
 let isSubmitting = false;
 let isLoadingList = false;
 let clockTimerId = null;
+
+const nombreEl = ensureNameSelect();
+const roleToggleEls = ensureRoleToggles();
+
+function ensureRoleToggles() {
+  const roleSelector = document.createElement("div");
+  roleSelector.className = "role-selector";
+  roleSelector.innerHTML = `
+    <span class="status-label">Rol</span>
+    <div class="role-toggle-group" aria-label="Selecciona un rol">
+      <button type="button" class="role-toggle" data-role-value="administrador">Administrador</button>
+      <button type="button" class="role-toggle" data-role-value="tutor">Tutor</button>
+    </div>
+  `;
+
+  rolEl.insertAdjacentElement("beforebegin", roleSelector);
+  return Array.from(roleSelector.querySelectorAll(".role-toggle"));
+}
+
+function ensureNameSelect() {
+  let select = document.getElementById("nombre");
+  if (select) {
+    return select;
+  }
+
+  const field = document.createElement("div");
+  field.className = "field";
+
+  const label = document.createElement("label");
+  label.setAttribute("for", "nombre");
+  label.textContent = "Nombre";
+
+  select = document.createElement("select");
+  select.id = "nombre";
+  select.disabled = true;
+  select.innerHTML = '<option value="">Primero selecciona un rol</option>';
+
+  field.append(label, select);
+
+  const anchor = observacionEl.closest(".field");
+  anchor?.insertAdjacentElement("beforebegin", field);
+
+  return select;
+}
 
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
-function getMinutosDelDia(fecha = new Date()) {
-  return fecha.getHours() * 60 + fecha.getMinutes();
-}
-
-function parseHora(hora) {
-  const [horas, minutos] = hora.split(":").map(Number);
-  return horas * 60 + minutos;
-}
-
-function detectarMarcaje(fecha = new Date()) {
-  const minutosActuales = getMinutosDelDia(fecha);
-
-  for (const bloque of BLOQUES) {
-    const inicio = parseHora(bloque.inicio);
-    const fin = parseHora(bloque.fin);
-
-    if (minutosActuales < inicio || minutosActuales > fin) {
-      continue;
-    }
-
-    return {
-      bloque: bloque.nombre,
-      estado: minutosActuales <= inicio + MINUTOS_PRESENTE - 1 ? "presente" : "atrasado"
-    };
-  }
-
-  return null;
-}
-
-function actualizarDeteccionVisual() {
-  const deteccion = detectarMarcaje();
-
-  if (!deteccion) {
-    bloqueDetectadoEl.textContent = "Sin bloque válido";
-    estadoDetectadoEl.textContent = "No registrable";
-    return;
-  }
-
-  bloqueDetectadoEl.textContent = deteccion.bloque;
-  estadoDetectadoEl.textContent = deteccion.estado;
-}
-
-function poblarNombres() {
-  const rolSeleccionado = rolEl.value;
-  nombreEl.innerHTML = '<option value="">Selecciona una persona</option>';
-
-function getHoraLocal(date = new Date()) {
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+function getFechaLocal(date = new Date()) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function formatFecha(date = new Date()) {
@@ -139,65 +133,51 @@ function formatHora(date = new Date()) {
   }).format(date);
 }
 
-function getMinutesFromTime(time) {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
+function parseHora(hora) {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
 }
 
-function detectBlock(date = new Date()) {
-  const currentMinutes = date.getHours() * 60 + date.getMinutes();
-
-  return (
-    BLOCKS.find((block) => {
-      const startMinutes = getMinutesFromTime(block.inicio);
-      const endMinutes = getMinutesFromTime(block.fin);
-      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-    }) || null
-  );
+function getMinutosDelDia(fecha = new Date()) {
+  return fecha.getHours() * 60 + fecha.getMinutes();
 }
 
-function detectStatus(block, date = new Date()) {
-  if (!block) {
-    return "presente";
-  }
+function detectarMarcaje(fecha = new Date()) {
+  const minutosActuales = getMinutosDelDia(fecha);
 
-  const currentMinutes = date.getHours() * 60 + date.getMinutes();
-  const startMinutes = getMinutesFromTime(block.inicio);
+  for (const bloque of BLOQUES) {
+    const inicio = parseHora(bloque.inicio);
+    const fin = parseHora(bloque.fin);
 
-  return currentMinutes <= startMinutes + 5 ? "presente" : "atrasado";
-}
+    if (minutosActuales < inicio || minutosActuales > fin) {
+      continue;
+    }
 
-function getDetectedAttendance(date = new Date()) {
-  const detectedBlock = detectBlock(date);
-
-  if (!detectedBlock) {
     return {
-      blockName: "Fuera de bloque",
-      blockLabel: "Fuera de bloque",
-      status: "presente",
-      isOutsideBlock: true
+      bloque: bloque.nombre,
+      estado: minutosActuales <= inicio + MINUTOS_PRESENTE - 1 ? "presente" : "atrasado",
+      fueraDeBloque: false
     };
   }
 
   return {
-    blockName: detectedBlock.nombre,
-    blockLabel: `${detectedBlock.nombre} (${detectedBlock.inicio} a ${detectedBlock.fin})`,
-    status: detectStatus(detectedBlock, date),
-    isOutsideBlock: false
+    bloque: "Fuera de bloque",
+    estado: "presente",
+    fueraDeBloque: true
   };
+}
+
+function formatStatusLabel(status, fueraDeBloque = false) {
+  if (fueraDeBloque) {
+    return "Presente (fuera de bloque)";
+  }
+
+  return status === "atrasado" ? "Atrasado" : "Presente";
 }
 
 function setMessage(type, text) {
   mensajeEl.className = `mensaje ${type}`;
   mensajeEl.textContent = text;
-}
-
-function formatStatusLabel(status, isOutsideBlock = false) {
-  if (isOutsideBlock) {
-    return "Presente (fuera de bloque)";
-  }
-
-  return status === "atrasado" ? "Atrasado" : "Presente";
 }
 
 function resetNameOptions(placeholder) {
@@ -209,62 +189,76 @@ function resetNameOptions(placeholder) {
   nombreEl.value = "";
 }
 
-function populateNames() {
-  const selectedRole = rolEl.value;
-  const availablePeople = PERSONAS
-    .filter((person) => person.rol === selectedRole)
+function poblarNombres() {
+  const rolSeleccionado = rolEl.value;
+  const personasDisponibles = PERSONAS
+    .filter((persona) => persona.rol === rolSeleccionado)
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
-  if (!selectedRole) {
+  if (!rolSeleccionado) {
     nombreEl.disabled = true;
     resetNameOptions("Primero selecciona un rol");
     setMessage("info", "Selecciona un rol para habilitar la lista de nombres.");
     return;
   }
 
-  if (availablePeople.length === 0) {
+  if (personasDisponibles.length === 0) {
     nombreEl.disabled = true;
     resetNameOptions("No hay personas disponibles para este rol");
-    setMessage("error", `No hay nombres configurados para el rol ${selectedRole}.`);
+    setMessage("error", `No hay nombres configurados para el rol ${rolSeleccionado}.`);
     return;
   }
 
   nombreEl.disabled = false;
   resetNameOptions("Selecciona una persona");
 
-  availablePeople.forEach((person) => {
+  personasDisponibles.forEach((persona) => {
     const option = document.createElement("option");
-    option.value = person.nombre;
-    option.textContent = person.nombre;
+    option.value = persona.nombre;
+    option.textContent = persona.nombre;
     nombreEl.appendChild(option);
   });
 
   setMessage("info", "Selecciona una persona y luego registra la entrada o la salida desde este formulario.");
 }
 
-async function registrarAsistencia() {
-  const rol = rolEl.value;
-  const nombre = nombreEl.value;
-  const observacion = observacionEl.value.trim();
-  const fecha = getFechaLocal();
-  const deteccion = detectarMarcaje();
+function syncRoleToggleState() {
+  roleToggleEls.forEach((button) => {
+    const isActive = button.dataset.roleValue === rolEl.value;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
 
-  if (!rol || !nombre) {
-    mensajeEl.textContent = "Completa rol y nombre.";
-    return;
+function hasStoredTime(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatStoredDateTime(value) {
+  if (!value) {
+    return "-";
   }
 
-  if (!deteccion) {
-    actualizarDeteccionVisual();
-    mensajeEl.textContent = "No se puede registrar: la hora actual no corresponde a ningún bloque válido.";
-    return;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(11, 19) || String(value);
   }
 
-  const { bloque, estado } = deteccion;
-  actualizarDeteccionVisual();
-  mensajeEl.textContent = `Registrando... Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
-
-  return String(value).slice(0, 8);
+  return new Intl.DateTimeFormat("es-CL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date);
 }
 
 function getExitAction(record) {
@@ -337,16 +331,29 @@ function updatePrimaryAction() {
   estadoUsuarioDetalleEl.textContent = status.detail;
   estadoUsuarioPanelEl.dataset.status = status.code;
   btnAccionPrincipal.textContent = status.buttonLabel;
-  btnAccionPrincipal.disabled = status.buttonMode === "disabled" || status.buttonMode === "completed" || isSubmitting;
   btnAccionPrincipal.dataset.mode = status.buttonMode;
+  btnAccionPrincipal.disabled = isSubmitting || status.buttonMode === "disabled" || status.buttonMode === "completed";
 }
 
-function syncRoleToggleState() {
-  roleToggleEls.forEach((button) => {
-    const isActive = button.dataset.roleValue === rolEl.value;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
-  });
+function actualizarDeteccionVisual() {
+  const deteccion = detectarMarcaje();
+  bloqueDetectadoEl.textContent = deteccion.bloque;
+  estadoDetectadoEl.textContent = formatStatusLabel(deteccion.estado, deteccion.fueraDeBloque);
+  estadoPrevistoEl.textContent = formatStatusLabel(deteccion.estado, deteccion.fueraDeBloque);
+}
+
+function updateClockPanel() {
+  const now = new Date();
+  const deteccion = detectarMarcaje(now);
+
+  fechaActualEl.textContent = formatFecha(now);
+  horaActualEl.textContent = formatHora(now);
+  bloqueActualEl.textContent = deteccion.bloque;
+  estadoActualEl.textContent = deteccion.fueraDeBloque
+    ? "Fuera de bloque: el sistema registrará presente."
+    : `Estado detectado para este bloque: ${formatStatusLabel(deteccion.estado)}.`;
+
+  actualizarDeteccionVisual();
 }
 
 function renderRecords(records) {
@@ -355,8 +362,38 @@ function renderRecords(records) {
     return;
   }
 
-  if (existente && existente.length > 0) {
-    mensajeEl.textContent = `Esa persona ya fue registrada hoy en el bloque ${bloque}. Estado detectado: ${estado}.`;
+  listaRegistrosEl.innerHTML = records
+    .map((record) => {
+      const entrada = formatStoredDateTime(record.hora_entrada || record.hora);
+      const salida = formatStoredDateTime(record.hora_salida);
+      const estadoEntrada = formatStatusLabel(record.estado_entrada || record.estado, record.bloque === "Fuera de bloque");
+
+      return `
+        <article class="registro-item">
+          <div class="registro-item-header">
+            <div>
+              <strong>${escapeHtml(record.nombre)}</strong>
+              <small>${escapeHtml(record.rol || "sin rol")}</small>
+            </div>
+            <span class="registro-badge">${escapeHtml(record.bloque || "Sin bloque")}</span>
+          </div>
+          <div class="registro-item-body">
+            <p><span class="record-label">Estado</span>${escapeHtml(estadoEntrada)}</p>
+            <p><span class="record-label">Entrada</span>${escapeHtml(entrada)}</p>
+            <p><span class="record-label">Salida</span>${escapeHtml(salida)}</p>
+            <p><span class="record-label">Observación</span>${escapeHtml(record.observacion || "-")}</p>
+          </div>
+          <div class="registro-item-actions">
+            ${getExitAction(record)}
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function loadTodayRecords() {
+  if (isLoadingList) {
     return;
   }
 
@@ -383,45 +420,10 @@ function renderRecords(records) {
   } catch (error) {
     console.error(error);
     listaRegistrosEl.innerHTML = '<div class="empty-state error-state">No se pudieron cargar los registros del día. Intenta nuevamente.</div>';
+    setMessage("error", "No se pudieron cargar los registros de hoy.");
   } finally {
     isLoadingList = false;
     btnActualizar.disabled = false;
-  }
-}
-
-function wait(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-async function refreshRecordsAfterUpdate() {
-  await loadTodayRecords();
-  updatePrimaryAction();
-  await wait(300);
-  await loadTodayRecords();
-  updatePrimaryAction();
-}
-
-function applyExitUpdateToCurrentState(recordId, horaSalida) {
-  const normalizedRecordId = String(recordId);
-  let didUpdate = false;
-
-  todayRecords = todayRecords.map((record) => {
-    if (String(record.id) !== normalizedRecordId) {
-      return record;
-    }
-
-    didUpdate = true;
-    return {
-      ...record,
-      hora_salida: horaSalida
-    };
-  });
-
-  if (didUpdate) {
-    renderRecords(todayRecords);
-    updatePrimaryAction();
   }
 }
 
@@ -437,11 +439,10 @@ async function registerAttendance() {
   const fecha = getFechaLocal(now);
   const hora = now.toISOString();
   const horaVisible = formatHora(now);
-  const detectedAttendance = getDetectedAttendance(now);
+  const deteccion = detectarMarcaje(now);
 
   if (!role) {
     setMessage("error", "Faltan datos para registrar la entrada: selecciona un rol.");
-    rolEl.focus();
     return;
   }
 
@@ -456,17 +457,14 @@ async function registerAttendance() {
     return;
   }
 
-  const blockName = detectedAttendance.blockName;
-  const status = detectedAttendance.status;
-
   isSubmitting = true;
   btnRegistrar.disabled = true;
+  btnRegistrarSalida.disabled = true;
   btnAccionPrincipal.disabled = true;
   btnRegistrar.textContent = "Registrando...";
-  btnAccionPrincipal.textContent = "Registrando entrada...";
   setMessage(
     "info",
-    `Procesando registro de entrada para ${name}. Bloque detectado: ${blockName}. Estado esperado: ${formatStatusLabel(status, detectedAttendance.isOutsideBlock)}.`
+    `Procesando registro de entrada para ${name}. Bloque detectado: ${deteccion.bloque}. Estado esperado: ${formatStatusLabel(deteccion.estado, deteccion.fueraDeBloque)}.`
   );
 
   try {
@@ -476,7 +474,7 @@ async function registerAttendance() {
       .eq("nombre", name)
       .eq("rol", role)
       .eq("fecha", fecha)
-      .eq("bloque", blockName)
+      .eq("bloque", deteccion.bloque)
       .limit(1);
 
     if (searchError) {
@@ -484,10 +482,7 @@ async function registerAttendance() {
     }
 
     if (existingRecord && existingRecord.length > 0) {
-      setMessage(
-        "error",
-        `Entrada duplicada detectada: ${name} ya tiene un registro hoy en el bloque ${blockName}. No se realizó un segundo registro.`
-      );
+      setMessage("error", `Entrada duplicada detectada: ${name} ya tiene un registro hoy en el bloque ${deteccion.bloque}.`);
       return;
     }
 
@@ -496,12 +491,12 @@ async function registerAttendance() {
         nombre: name,
         rol: role,
         fecha,
-        bloque: blockName,
-        estado: status,
+        bloque: deteccion.bloque,
+        estado: deteccion.estado,
         observacion: observation,
         hora,
         hora_entrada: hora,
-        estado_entrada: status,
+        estado_entrada: deteccion.estado,
         registrado_por: "recepcion"
       }
     ]);
@@ -510,20 +505,21 @@ async function registerAttendance() {
       throw new Error("Supabase no pudo guardar la entrada. Revisa la conexión e intenta nuevamente.");
     }
 
+    observacionEl.value = "";
     setMessage(
       "success",
-      detectedAttendance.isOutsideBlock
+      deteccion.fueraDeBloque
         ? `Entrada registrada con éxito para ${name}. Bloque detectado: fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
-        : `Entrada registrada con éxito para ${name}. Bloque detectado: ${blockName}. Estado detectado: ${status}. Hora: ${horaVisible}.`
+        : `Entrada registrada con éxito para ${name}. Bloque detectado: ${deteccion.bloque}. Estado detectado: ${deteccion.estado}. Hora: ${horaVisible}.`
     );
-    observacionEl.value = "";
-    await refreshRecordsAfterUpdate();
+    await loadTodayRecords();
   } catch (error) {
     console.error(error);
     setMessage("error", error.message || "Supabase devolvió un error al registrar la entrada. Intenta nuevamente.");
   } finally {
     isSubmitting = false;
     btnRegistrar.disabled = false;
+    btnRegistrarSalida.disabled = false;
     btnRegistrar.textContent = "Registrar marcaje";
     updateClockPanel();
     updatePrimaryAction();
@@ -535,193 +531,97 @@ async function registerExit(recordId = null, recordName = null) {
     return;
   }
 
-  mensajeEl.textContent = `Asistencia registrada correctamente. Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
-  observacionEl.value = "";
-  await cargarRegistrosHoy();
-}
+  const role = rolEl.value;
+  const selectedName = nombreEl.value;
+  const name = recordName || selectedName;
+  const fecha = getFechaLocal();
+  const now = new Date();
+  const horaSalida = now.toISOString();
+  const horaVisible = formatHora(now);
+
+  if (!name) {
+    setMessage("error", "Selecciona una persona para registrar la salida.");
+    return;
+  }
+
+  isSubmitting = true;
+  btnRegistrar.disabled = true;
+  btnRegistrarSalida.disabled = true;
+  btnAccionPrincipal.disabled = true;
+  btnRegistrarSalida.textContent = "Registrando salida...";
+  setMessage("info", `Procesando salida para ${name}.`);
+
+  try {
+    let recordToUpdate = null;
+
+    if (recordId) {
+      const { data, error } = await supabase
+        .from("marcaje_personal")
+        .select("id, nombre, rol, bloque, fecha, hora_entrada, hora_salida")
+        .eq("id", recordId)
+        .eq("fecha", fecha)
+        .maybeSingle();
+
+      if (error) {
+        throw new Error("Supabase no pudo validar el registro de salida. Intenta nuevamente.");
+      }
+
+      recordToUpdate = data;
+    } else {
+      let query = supabase
+        .from("marcaje_personal")
+        .select("id, nombre, rol, bloque, fecha, hora_entrada, hora_salida")
+        .eq("nombre", name)
+        .eq("fecha", fecha)
+        .order("hora_entrada", { ascending: false });
 
       if (role) {
-        searchQuery = searchQuery.eq("rol", role);
+        query = query.eq("rol", role);
       }
 
-      const { data: candidateRecords, error: searchError, count: candidateCount } = await searchQuery;
+      const { data, error } = await query;
 
-      if (searchError) {
-        console.error("Error real buscando entrada abierta para registrar salida", {
-          selectedPerson: name,
-          selectedRole: role || null,
-          fecha,
-          filters: searchFilters,
-          error: searchError,
-          fullError: searchError
-        });
-        throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
+      if (error) {
+        throw new Error("Supabase no pudo buscar la entrada abierta para registrar la salida. Intenta nuevamente.");
       }
 
-      const matchingRecords = (candidateRecords || []).filter((record) => record.nombre === name && (!role || record.rol === role));
-      logExitContext("resultado búsqueda registro abierto", {
-        filters: searchFilters,
-        rowsMatched: candidateCount ?? matchingRecords.length,
-        candidateRecords,
-        matchingRows: matchingRecords.length
-      });
-      const openRecord = matchingRecords.find((record) => !hasStoredTime(record.hora_salida));
-
-      if (!openRecord) {
-        const latestRecord = matchingRecords[0];
-
-        if (latestRecord && hasStoredTime(latestRecord.hora_salida)) {
-          setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${latestRecord.bloque || "sin bloque"}.`);
-          return;
-        }
-
-        setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada y luego intenta nuevamente.`);
-        return;
-      }
-
-      targetRecordId = openRecord.id;
-      targetRecordName = openRecord.nombre || targetRecordName;
-    }
-
-    const targetFilters = {
-      id: targetRecordId,
-      nombre: targetRecordName || name,
-      rol: role || null,
-      fecha
-    };
-    logExitContext("validando registro objetivo", { filters: targetFilters });
-
-    let targetRecordQuery = supabase
-      .from("marcaje_personal")
-      .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
-      .eq("id", targetRecordId)
-      .eq("nombre", targetRecordName || name)
-      .eq("fecha", fecha);
-
-    if (role) {
-      targetRecordQuery = targetRecordQuery.eq("rol", role);
-    }
-
-    const { data: recordToUpdate, error: targetRecordError } = await targetRecordQuery.maybeSingle();
-
-    if (targetRecordError) {
-      console.error("Error real validando registro a cerrar", {
-        selectedPerson: name,
-        selectedRole: role || null,
-        fecha,
-        filters: targetFilters,
-        error: targetRecordError,
-        fullError: targetRecordError
-      });
-      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
+      recordToUpdate = (data || []).find((record) => record.hora_entrada && !hasStoredTime(record.hora_salida)) || null;
     }
 
     if (!recordToUpdate) {
-      setMessage("error", "No se encontró el registro pendiente de hoy para guardar la salida.");
+      setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada.`);
       return;
     }
 
-    if (!recordId && (recordToUpdate.nombre !== name || recordToUpdate.rol !== role)) {
-      console.error("Registro abierto no coincide con la selección actual", {
-        selectedPerson: name,
-        selectedRole: role || null,
-        recordToUpdate
-      });
-      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
-    }
-
     if (!recordToUpdate.hora_entrada) {
-      setMessage("error", `No existe una entrada abierta hoy para ${targetRecordName}. Primero registra la entrada y luego intenta nuevamente.`);
+      setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada.`);
       return;
     }
 
     if (hasStoredTime(recordToUpdate.hora_salida)) {
-      setMessage("error", `La salida de hoy para ${targetRecordName} ya estaba registrada en el bloque ${recordToUpdate.bloque || "sin bloque"}.`);
+      setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${recordToUpdate.bloque || "sin bloque"}.`);
       return;
     }
 
-    const updateFilters = {
-      id: recordToUpdate.id,
-      nombre: targetRecordName,
-      rol: role || null,
-      fecha,
-      hora_entrada: recordToUpdate.hora_entrada,
-      hora_salida_actual: recordToUpdate.hora_salida ?? null
-    };
-    logExitContext("actualizando registro abierto", {
-      horaSalida,
-      filters: updateFilters,
-      rowsMatched: 1
-    });
-
-    let updateQuery = supabase
+    const { data: updatedRows, error: updateError } = await supabase
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
       .eq("id", recordToUpdate.id)
-      .eq("nombre", targetRecordName)
-      .eq("fecha", fecha)
-      .select("id, nombre, rol, fecha, hora_entrada, hora_salida");
+      .select("id, hora_salida");
 
-    if (role) {
-      updateQuery = updateQuery.eq("rol", role);
-    }
-
-    const { data: updatedRecords, error: updateError } = await updateQuery;
-    const updatedRecord = Array.isArray(updatedRecords) ? updatedRecords[0] : updatedRecords;
-
-    if (updateError || !updatedRecord) {
-      console.error("Error real guardando salida en Supabase", {
-        selectedPerson: name,
-        selectedRole: role || null,
-        targetRecordId: recordToUpdate.id,
-        fecha,
-        horaSalida,
-        filters: updateFilters,
-        rowsMatched: Array.isArray(updatedRecords) ? updatedRecords.length : updatedRecords ? 1 : 0,
-        error: updateError,
-        fullError: updateError,
-        updatedRecords
-      });
+    if (updateError || !updatedRows || updatedRows.length === 0) {
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
-    const savedExitTime = updatedRecord.hora_salida || horaSalida;
-    previousRecordsSnapshot = todayRecords.map((record) => ({ ...record }));
-    applyExitUpdateToCurrentState(recordToUpdate.id, savedExitTime);
-    await refreshRecordsAfterUpdate();
-
-    const confirmedRecord = todayRecords.find((record) => String(record.id) === String(recordToUpdate.id));
-    const hasConfirmedExit = hasStoredTime(confirmedRecord?.hora_salida);
-
-    if (!hasConfirmedExit) {
-      console.error("La recarga no reflejó la salida guardada", { targetRecordId: recordToUpdate.id, confirmedRecord, todayRecords });
-      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
-    }
-
-    setMessage("success", `Salida registrada con éxito para ${targetRecordName}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
+    setMessage("success", `Salida registrada con éxito para ${name}. Hora: ${horaVisible}.`);
+    await loadTodayRecords();
   } catch (error) {
-    if (previousRecordsSnapshot) {
-      todayRecords = previousRecordsSnapshot;
-      renderRecords(todayRecords);
-      updatePrimaryAction();
-    }
-
     console.error(error);
-    setMessage(
-      "error",
-      error.message === "Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente."
-        ? error.message
-        : "Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente."
-    );
+    setMessage("error", error.message || "Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
   } finally {
     isSubmitting = false;
+    btnRegistrar.disabled = false;
     btnRegistrarSalida.disabled = false;
-
-    if (targetButton) {
-      targetButton.disabled = false;
-      targetButton.textContent = "Registrar salida";
-    }
-
     btnRegistrarSalida.textContent = "Registrar salida";
     updateClockPanel();
     updatePrimaryAction();
@@ -729,16 +629,22 @@ async function registerExit(recordId = null, recordName = null) {
 }
 
 function startClock() {
+  if (clockTimerId) {
+    window.clearInterval(clockTimerId);
+  }
+
   updateClockPanel();
   clockTimerId = window.setInterval(updateClockPanel, 1000);
 }
 
 rolEl.addEventListener("change", () => {
   syncRoleToggleState();
-  populateNames();
+  poblarNombres();
   updatePrimaryAction();
 });
+
 nombreEl.addEventListener("change", updatePrimaryAction);
+
 roleToggleEls.forEach((button) => {
   button.addEventListener("click", () => {
     rolEl.value = button.dataset.roleValue || "";
@@ -746,21 +652,23 @@ roleToggleEls.forEach((button) => {
     nombreEl.focus();
   });
 });
+
 btnRegistrar.addEventListener("click", registerAttendance);
-btnRegistrarSalida.addEventListener("click", registerExit);
+btnRegistrarSalida.addEventListener("click", () => registerExit());
 btnActualizar.addEventListener("click", loadTodayRecords);
 btnAccionPrincipal.addEventListener("click", () => {
   const mode = btnAccionPrincipal.dataset.mode;
 
   if (mode === "entry") {
-    btnRegistrar.click();
+    registerAttendance();
     return;
   }
 
   if (mode === "exit") {
-    btnRegistrarSalida.click();
+    registerExit();
   }
 });
+
 listaRegistrosEl.addEventListener("click", (event) => {
   const actionButton = event.target.closest('[data-action="registrar-salida"]');
 
@@ -769,7 +677,7 @@ listaRegistrosEl.addEventListener("click", (event) => {
   }
 
   const recordId = actionButton.dataset.recordId?.trim();
-  const recordName = actionButton.dataset.recordName || "la persona seleccionada";
+  const recordName = actionButton.dataset.recordName || "";
 
   if (!recordId) {
     setMessage("error", "No se pudo identificar el registro para guardar la salida.");
@@ -780,11 +688,7 @@ listaRegistrosEl.addEventListener("click", (event) => {
 });
 
 syncRoleToggleState();
-populateNames();
+poblarNombres();
 updatePrimaryAction();
 startClock();
 loadTodayRecords();
-
-actualizarDeteccionVisual();
-setInterval(actualizarDeteccionVisual, 30000);
-cargarRegistrosHoy();
