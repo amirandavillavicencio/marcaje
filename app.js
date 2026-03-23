@@ -843,7 +843,6 @@ async function registerExit(recordId = null, recordName = null) {
       .from("marcaje_personal")
       .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
       .eq("id", targetRecordId)
-      .eq("fecha", fecha)
       .maybeSingle();
 
     if (targetRecordError) {
@@ -897,7 +896,6 @@ async function registerExit(recordId = null, recordName = null) {
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
       .eq("id", recordToUpdate.id)
-      .eq("fecha", fecha)
       .select("id, nombre, rol, fecha, hora_entrada, hora_salida");
 
     const updatedRecord = Array.isArray(updatedRecords)
