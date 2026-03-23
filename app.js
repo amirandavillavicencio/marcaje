@@ -186,7 +186,7 @@ function populateNames() {
     nombreEl.appendChild(option);
   });
 
-  setMessage("info", "Selecciona una persona y luego registra el marcaje.");
+  setMessage("info", "Selecciona una persona y luego registra la entrada o la salida desde este formulario.");
 }
 
 function updateClockPanel() {
@@ -441,12 +441,12 @@ async function registerExit() {
   isSubmitting = true;
   btnRegistrarSalida.disabled = true;
   btnRegistrarSalida.textContent = "Registrando salida...";
-  setMessage("info", `Buscando una entrada abierta para ${name}.`);
+  setMessage("info", `Buscando la entrada abierta de hoy para ${name} y completando su salida.`);
 
   try {
     const { data: openRecordData, error: searchError } = await supabase
       .from("marcaje_personal")
-      .select("id, hora_entrada, hora_salida")
+      .select("id, bloque, hora_entrada, hora_salida")
       .eq("nombre", name)
       .eq("rol", role)
       .eq("fecha", fecha)
@@ -462,7 +462,7 @@ async function registerExit() {
     if (!openRecordData || openRecordData.length === 0) {
       const { data: existingRecord, error: existingRecordError } = await supabase
         .from("marcaje_personal")
-        .select("id, hora_entrada, hora_salida")
+        .select("id, bloque, hora_entrada, hora_salida")
         .eq("nombre", name)
         .eq("rol", role)
         .eq("fecha", fecha)
@@ -475,11 +475,11 @@ async function registerExit() {
       }
 
       if (existingRecord && existingRecord.length > 0 && existingRecord[0].hora_salida) {
-        setMessage("error", "La salida de este registro ya fue registrada.");
+        setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${existingRecord[0].bloque || "sin bloque"}.`);
         return;
       }
 
-      setMessage("error", "No hay una entrada registrada para cerrar");
+      setMessage("error", `No existe una entrada abierta hoy para ${name}. Primero registra la entrada y luego intenta nuevamente.`);
       return;
     }
 
@@ -494,7 +494,7 @@ async function registerExit() {
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
-    setMessage("success", `Salida registrada con éxito para ${name}. Hora: ${horaVisible}.`);
+    setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro abierto del día. Hora: ${horaVisible}.`);
     await loadTodayRecords();
   } catch (error) {
     console.error(error);
