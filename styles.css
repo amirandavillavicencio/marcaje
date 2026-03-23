@@ -184,6 +184,9 @@ textarea {
 
 .actions {
   margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 button {
@@ -306,7 +309,8 @@ button.secondary {
   }
 
   .grid,
-  .meta-grid {
+  .meta-grid,
+  .actions {
     grid-template-columns: 1fr;
   }
 
