@@ -574,7 +574,7 @@ listaRegistrosEl.addEventListener("click", (event) => {
     return;
   }
 
-  const recordId = Number(actionButton.dataset.recordId);
+  const recordId = actionButton.dataset.recordId?.trim();
   const recordName = actionButton.dataset.recordName || "la persona seleccionada";
 
   if (!recordId) {
