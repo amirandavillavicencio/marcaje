@@ -51,6 +51,13 @@ const estadoActualEl = document.getElementById("estadoActual");
 const fechaActualEl = document.getElementById("fechaActual");
 const horaActualEl = document.getElementById("horaActual");
 const estadoPrevistoEl = document.getElementById("estadoPrevisto");
+const btnAccionPrincipal = document.getElementById("btnAccionPrincipal");
+const estadoUsuarioTextoEl = document.getElementById("estadoUsuarioTexto");
+const estadoUsuarioDetalleEl = document.getElementById("estadoUsuarioDetalle");
+const estadoUsuarioPanelEl = document.getElementById("estadoUsuarioPanel");
+const roleToggleEls = Array.from(document.querySelectorAll(".role-toggle"));
+
+let todayRecords = [];
 
 let isSubmitting = false;
 let isLoadingList = false;
@@ -258,6 +265,67 @@ function getExitAction(record) {
   return "";
 }
 
+function inferUserStatus(records, role, name) {
+  if (!role || !name) {
+    return {
+      code: "unselected",
+      text: "Selecciona una persona",
+      detail: "El botón principal se ajustará automáticamente.",
+      buttonLabel: "Selecciona una persona",
+      buttonMode: "disabled"
+    };
+  }
+
+  const matchingRecords = records.filter((record) => record.nombre === name && record.rol === role);
+
+  if (matchingRecords.length === 0) {
+    return {
+      code: "none",
+      text: "No tiene registro hoy",
+      detail: "Puedes registrar la entrada desde el botón principal.",
+      buttonLabel: "Registrar entrada",
+      buttonMode: "entry"
+    };
+  }
+
+  const openRecord = matchingRecords.find((record) => record.hora_entrada && !record.hora_salida);
+  if (openRecord) {
+    return {
+      code: "pending",
+      text: "Entrada registrada — pendiente salida",
+      detail: `Entrada detectada en ${openRecord.bloque || "sin bloque"}.`,
+      buttonLabel: "Registrar salida",
+      buttonMode: "exit"
+    };
+  }
+
+  return {
+    code: "complete",
+    text: "Jornada completada",
+    detail: "La entrada y la salida de hoy ya están registradas.",
+    buttonLabel: "Jornada completada",
+    buttonMode: "completed"
+  };
+}
+
+function updatePrimaryAction() {
+  const status = inferUserStatus(todayRecords, rolEl.value, nombreEl.value);
+  estadoUsuarioTextoEl.textContent = status.text;
+  estadoUsuarioDetalleEl.textContent = status.detail;
+  estadoUsuarioPanelEl.dataset.status = status.code;
+  btnAccionPrincipal.textContent = status.buttonLabel;
+  btnAccionPrincipal.disabled = status.buttonMode === "disabled" || status.buttonMode === "completed" || isSubmitting;
+  btnAccionPrincipal.dataset.mode = status.buttonMode;
+}
+
+function syncRoleToggleState() {
+  roleToggleEls.forEach((button) => {
+    const isActive = button.dataset.roleValue === rolEl.value;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
 function renderRecords(records) {
   if (!records || records.length === 0) {
     listaRegistrosEl.innerHTML = '<div class="empty-state">Todavía no hay registros para hoy.</div>';
@@ -274,22 +342,37 @@ function renderRecords(records) {
       const entryTime = record.hora_entrada || record.hora;
       const exitTime = record.hora_salida ? formatStoredTime(record.hora_salida) : "Sin salida";
       const exitAction = getExitAction(record);
+      const progressLabel = record.hora_salida
+        ? "Completo"
+        : record.hora_entrada
+          ? "Pendiente salida"
+          : "Entrada";
+      const progressClass = record.hora_salida
+        ? "badge-complete"
+        : record.hora_entrada
+          ? "badge-warn"
+          : "badge-ok";
 
       return `
         <article class="registro">
-          <div class="registro-top">
-            <strong>${escapeHtml(record.nombre)}</strong>
-            <span class="registro-hora">Entrada: ${escapeHtml(formatStoredTime(entryTime))}</span>
+          <div class="record-main">
+            <div>
+              <h3 class="record-name">${escapeHtml(record.nombre)}</h3>
+              <p class="record-subline">Bloque: ${escapeHtml(record.bloque || "Sin bloque")}</p>
+            </div>
+            <span class="record-role">${escapeHtml(record.rol)}</span>
           </div>
-          <div class="registro-meta">
-            <span>${escapeHtml(record.rol)}</span>
-            <span>${escapeHtml(record.bloque)}</span>
-            <span class="badge ${statusValue === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(statusValue || "sin estado")}</span>
-          </div>
-          <div class="registro-meta registro-meta-secondary">
-            <span>Hora entrada: ${escapeHtml(formatStoredTime(entryTime))}</span>
-            <span>Hora salida: ${escapeHtml(exitTime)}</span>
-            <span>Estado entrada: ${escapeHtml(statusValue || "sin estado")}</span>
+          <div class="record-grid">
+            <div class="record-cell">
+              <span class="record-label">Hora</span>
+              <strong>${escapeHtml(formatStoredTime(entryTime))}</strong>
+              <p class="record-subline">Salida: ${escapeHtml(exitTime)}</p>
+            </div>
+            <div class="record-cell">
+              <span class="record-label">Estado</span>
+              <span class="badge ${progressClass}">${escapeHtml(progressLabel)}</span>
+              <p class="record-subline">Marcaje: ${escapeHtml(statusValue || "sin estado")}</p>
+            </div>
           </div>
           <div class="registro-actions">
             ${exitAction}
@@ -322,7 +405,9 @@ async function loadTodayRecords() {
       throw error;
     }
 
-    renderRecords(data || []);
+    todayRecords = data || [];
+    renderRecords(todayRecords);
+    updatePrimaryAction();
   } catch (error) {
     console.error(error);
     listaRegistrosEl.innerHTML = '<div class="empty-state error-state">No se pudieron cargar los registros del día. Intenta nuevamente.</div>';
@@ -368,7 +453,9 @@ async function registerAttendance() {
 
   isSubmitting = true;
   btnRegistrar.disabled = true;
+  btnAccionPrincipal.disabled = true;
   btnRegistrar.textContent = "Registrando...";
+  btnAccionPrincipal.textContent = "Registrando entrada...";
   setMessage(
     "info",
     `Procesando registro de entrada para ${name}. Bloque detectado: ${blockName}. Estado esperado: ${formatStatusLabel(status, detectedAttendance.isOutsideBlock)}.`
@@ -431,6 +518,7 @@ async function registerAttendance() {
     btnRegistrar.disabled = false;
     btnRegistrar.textContent = "Registrar marcaje";
     updateClockPanel();
+    updatePrimaryAction();
   }
 }
 
@@ -470,6 +558,7 @@ async function registerExit(recordId = null, recordName = null) {
 
   isSubmitting = true;
   btnRegistrarSalida.disabled = true;
+  btnAccionPrincipal.disabled = true;
 
   if (targetButton) {
     targetButton.disabled = true;
@@ -478,6 +567,7 @@ async function registerExit(recordId = null, recordName = null) {
 
   if (!recordId) {
     btnRegistrarSalida.textContent = "Registrando salida...";
+    btnAccionPrincipal.textContent = "Registrando salida...";
     setMessage("info", `Buscando la entrada abierta de hoy para ${name} y completando su salida.`);
   } else {
     setMessage("info", `Registrando la salida del registro de ${name}.`);
@@ -555,6 +645,7 @@ async function registerExit(recordId = null, recordName = null) {
 
     btnRegistrarSalida.textContent = "Registrar salida";
     updateClockPanel();
+    updatePrimaryAction();
   }
 }
 
@@ -563,10 +654,34 @@ function startClock() {
   clockTimerId = window.setInterval(updateClockPanel, 1000);
 }
 
-rolEl.addEventListener("change", populateNames);
+rolEl.addEventListener("change", () => {
+  syncRoleToggleState();
+  populateNames();
+  updatePrimaryAction();
+});
+nombreEl.addEventListener("change", updatePrimaryAction);
+roleToggleEls.forEach((button) => {
+  button.addEventListener("click", () => {
+    rolEl.value = button.dataset.roleValue || "";
+    rolEl.dispatchEvent(new Event("change", { bubbles: true }));
+    nombreEl.focus();
+  });
+});
 btnRegistrar.addEventListener("click", registerAttendance);
 btnRegistrarSalida.addEventListener("click", registerExit);
 btnActualizar.addEventListener("click", loadTodayRecords);
+btnAccionPrincipal.addEventListener("click", () => {
+  const mode = btnAccionPrincipal.dataset.mode;
+
+  if (mode === "entry") {
+    btnRegistrar.click();
+    return;
+  }
+
+  if (mode === "exit") {
+    btnRegistrarSalida.click();
+  }
+});
 listaRegistrosEl.addEventListener("click", (event) => {
   const actionButton = event.target.closest('[data-action="registrar-salida"]');
 
@@ -585,7 +700,9 @@ listaRegistrosEl.addEventListener("click", (event) => {
   registerExit(recordId, recordName);
 });
 
+syncRoleToggleState();
 populateNames();
+updatePrimaryAction();
 startClock();
 loadTodayRecords();
 
