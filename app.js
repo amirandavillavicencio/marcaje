@@ -573,7 +573,7 @@ async function registerExit(recordId = null, recordName = null) {
   const name = recordName || nombreEl.value;
   const now = new Date();
   const fecha = getFechaLocal(now);
-  const horaSalida = now.toISOString();
+  const horaSalida = getHoraLocal(now);
   const horaVisible = formatHora(now);
   const targetButton = recordId
     ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
@@ -622,7 +622,21 @@ async function registerExit(recordId = null, recordName = null) {
     let targetRecordName = name;
 
     if (!targetRecordId) {
-      const { data: candidateRecords, error: searchError } = await supabase
+      const searchFilters = {
+        nombre: name,
+        rol: role || null,
+        fecha,
+        hora_entrada_requerida: true,
+        hora_salida_pendiente: [null, ""]
+      };
+      console.debug("Registrar salida: buscando registro abierto", {
+        selectedName: name,
+        selectedRole: role,
+        fecha,
+        filters: searchFilters
+      });
+
+      let searchQuery = supabase
         .from("marcaje_personal")
         .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
         .eq("nombre", name)
@@ -631,8 +645,20 @@ async function registerExit(recordId = null, recordName = null) {
         .order("hora_entrada", { ascending: false })
         .order("hora", { ascending: false });
 
+      if (role) {
+        searchQuery = searchQuery.eq("rol", role);
+      }
+
+      const { data: candidateRecords, error: searchError } = await searchQuery;
+
       if (searchError) {
-        console.error("Error real buscando entrada abierta para registrar salida", { name, role, fecha, searchError });
+        console.error("Error real buscando entrada abierta para registrar salida", {
+          selectedName: name,
+          selectedRole: role,
+          fecha,
+          filters: searchFilters,
+          searchError
+        });
         throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
       }
 
@@ -655,16 +681,40 @@ async function registerExit(recordId = null, recordName = null) {
       targetRecordName = openRecord.nombre || targetRecordName;
     }
 
-    const { data: recordToUpdate, error: targetRecordError } = await supabase
+    const targetFilters = {
+      id: targetRecordId,
+      nombre: targetRecordName || name,
+      rol: role || null,
+      fecha
+    };
+    console.debug("Registrar salida: validando registro objetivo", {
+      selectedName: name,
+      selectedRole: role,
+      fecha,
+      filters: targetFilters
+    });
+
+    let targetRecordQuery = supabase
       .from("marcaje_personal")
-      .select("id, nombre, rol, bloque, fecha, hora_entrada, hora_salida")
+      .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
       .eq("id", targetRecordId)
-      .eq("nombre", name)
-      .eq("fecha", fecha)
-      .maybeSingle();
+      .eq("nombre", targetRecordName || name)
+      .eq("fecha", fecha);
+
+    if (role) {
+      targetRecordQuery = targetRecordQuery.eq("rol", role);
+    }
+
+    const { data: recordToUpdate, error: targetRecordError } = await targetRecordQuery.maybeSingle();
 
     if (targetRecordError) {
-      console.error("Error real validando registro a cerrar", { targetRecordId, fecha, targetRecordError });
+      console.error("Error real validando registro a cerrar", {
+        selectedName: name,
+        selectedRole: role,
+        fecha,
+        filters: targetFilters,
+        targetRecordError
+      });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
@@ -688,23 +738,47 @@ async function registerExit(recordId = null, recordName = null) {
       return;
     }
 
-    const { data: updatedRecord, error: updateError } = await supabase
+    const updateFilters = {
+      id: recordToUpdate.id,
+      nombre: targetRecordName,
+      rol: role || null,
+      fecha,
+      hora_salida_pendiente: [null, ""]
+    };
+    console.debug("Registrar salida: actualizando registro abierto", {
+      selectedName: name,
+      selectedRole: role,
+      fecha,
+      horaSalida,
+      filters: updateFilters
+    });
+
+    let updateQuery = supabase
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
       .eq("id", recordToUpdate.id)
       .eq("nombre", targetRecordName)
       .eq("fecha", fecha)
       .or("hora_salida.is.null,hora_salida.eq.")
-      .select("id, nombre, fecha, hora_salida")
-      .maybeSingle();
+      .select("id, nombre, fecha, hora_salida");
+
+    if (role) {
+      updateQuery = updateQuery.eq("rol", role);
+    }
+
+    const { data: updatedRecords, error: updateError } = await updateQuery;
+    const updatedRecord = Array.isArray(updatedRecords) ? updatedRecords[0] : updatedRecords;
 
     if (updateError || !updatedRecord) {
       console.error("Error real guardando salida en Supabase", {
+        selectedName: name,
+        selectedRole: role,
         targetRecordId: recordToUpdate.id,
         fecha,
         horaSalida,
+        filters: updateFilters,
         updateError,
-        updatedRecord
+        updatedRecords
       });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
