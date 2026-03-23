@@ -104,13 +104,33 @@ function detectBlock(date = new Date()) {
 
 function detectStatus(block, date = new Date()) {
   if (!block) {
-    return null;
+    return "presente";
   }
 
   const currentMinutes = date.getHours() * 60 + date.getMinutes();
   const startMinutes = getMinutesFromTime(block.inicio);
 
   return currentMinutes <= startMinutes + 5 ? "presente" : "atrasado";
+}
+
+function getDetectedAttendance(date = new Date()) {
+  const detectedBlock = detectBlock(date);
+
+  if (!detectedBlock) {
+    return {
+      blockName: "Fuera de bloque",
+      blockLabel: "Fuera de bloque",
+      status: "presente",
+      isOutsideBlock: true
+    };
+  }
+
+  return {
+    blockName: detectedBlock.nombre,
+    blockLabel: `${detectedBlock.nombre} (${detectedBlock.inicio} a ${detectedBlock.fin})`,
+    status: detectStatus(detectedBlock, date),
+    isOutsideBlock: false
+  };
 }
 
 function setMessage(type, text) {
@@ -162,20 +182,19 @@ function populateNames() {
 
 function updateClockPanel() {
   const now = new Date();
-  const block = detectBlock(now);
-  const status = detectStatus(block, now);
+  const detectedAttendance = getDetectedAttendance(now);
 
   fechaActualEl.textContent = formatFecha(now);
   horaActualEl.textContent = formatHora(now);
-  bloqueActualEl.textContent = block ? `${block.nombre} (${block.inicio} a ${block.fin})` : "Fuera de bloque";
-  estadoPrevistoEl.textContent = status || "No disponible";
+  bloqueActualEl.textContent = detectedAttendance.blockLabel;
+  estadoPrevistoEl.textContent = detectedAttendance.status;
 
-  if (!block) {
-    estadoActualEl.textContent = "Solo se registran marcajes dentro de los bloques oficiales.";
+  if (detectedAttendance.isOutsideBlock) {
+    estadoActualEl.textContent = "Si registras ahora, se guardará como presente fuera de bloque.";
     return;
   }
 
-  estadoActualEl.textContent = `Si registras ahora, el estado será ${status}.`;
+  estadoActualEl.textContent = `Si registras ahora, el estado será ${detectedAttendance.status}.`;
 }
 
 function escapeHtml(value = "") {
@@ -278,7 +297,7 @@ async function registerAttendance() {
   const fecha = getFechaLocal(now);
   const hora = now.toISOString();
   const horaVisible = formatHora(now);
-  const block = detectBlock(now);
+  const detectedAttendance = getDetectedAttendance(now);
 
   if (!role) {
     setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
@@ -297,17 +316,13 @@ async function registerAttendance() {
     return;
   }
 
-  if (!block) {
-    setMessage("error", "No es posible registrar fuera de los bloques oficiales. Intenta nuevamente dentro de un bloque válido.");
-    return;
-  }
-
-  const status = detectStatus(block, now);
+  const blockName = detectedAttendance.blockName;
+  const status = detectedAttendance.status;
 
   isSubmitting = true;
   btnRegistrar.disabled = true;
   btnRegistrar.textContent = "Registrando...";
-  setMessage("info", `Validando registro para ${name} en el bloque ${block.nombre}...`);
+  setMessage("info", `Validando registro para ${name} en el bloque ${blockName}...`);
 
   try {
     const { data: existingRecord, error: searchError } = await supabase
@@ -316,7 +331,7 @@ async function registerAttendance() {
       .eq("nombre", name)
       .eq("rol", role)
       .eq("fecha", fecha)
-      .eq("bloque", block.nombre)
+      .eq("bloque", blockName)
       .limit(1);
 
     if (searchError) {
@@ -326,7 +341,7 @@ async function registerAttendance() {
     if (existingRecord && existingRecord.length > 0) {
       setMessage(
         "error",
-        `Ya existe un marcaje para ${name} como ${role} hoy en el bloque ${block.nombre}. No se registró un duplicado.`
+        `Ya existe un marcaje para ${name} como ${role} hoy en el bloque ${blockName}. No se registró un duplicado.`
       );
       return;
     }
@@ -336,7 +351,7 @@ async function registerAttendance() {
         nombre: name,
         rol: role,
         fecha,
-        bloque: block.nombre,
+        bloque: blockName,
         estado: status,
         observacion: observation,
         hora,
@@ -350,7 +365,11 @@ async function registerAttendance() {
 
     setMessage(
       "success",
-      `Marcaje registrado correctamente para ${name}. Bloque detectado: ${block.nombre}. Estado: ${status}. Hora: ${horaVisible}.`
+      detectedAttendance.isOutsideBlock
+        ? `Marcaje registrado correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
+        : status === "atrasado"
+          ? `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
+          : `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
     );
     observacionEl.value = "";
     await loadTodayRecords();
