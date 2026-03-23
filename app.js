@@ -138,6 +138,14 @@ function setMessage(type, text) {
   mensajeEl.textContent = text;
 }
 
+function formatStatusLabel(status, isOutsideBlock = false) {
+  if (isOutsideBlock) {
+    return "Presente (fuera de bloque)";
+  }
+
+  return status === "atrasado" ? "Atrasado" : "Presente";
+}
+
 function resetNameOptions(placeholder) {
   nombreEl.innerHTML = "";
   const option = document.createElement("option");
@@ -183,18 +191,22 @@ function populateNames() {
 function updateClockPanel() {
   const now = new Date();
   const detectedAttendance = getDetectedAttendance(now);
+  const statusLabel = formatStatusLabel(
+    detectedAttendance.status,
+    detectedAttendance.isOutsideBlock
+  );
 
   fechaActualEl.textContent = formatFecha(now);
   horaActualEl.textContent = formatHora(now);
   bloqueActualEl.textContent = detectedAttendance.blockLabel;
-  estadoPrevistoEl.textContent = detectedAttendance.status;
+  estadoPrevistoEl.textContent = statusLabel;
 
   if (detectedAttendance.isOutsideBlock) {
-    estadoActualEl.textContent = "Si registras ahora, se guardará como presente fuera de bloque.";
+    estadoActualEl.textContent = "Bloque detectado: fuera de bloque. Estado esperado: presente.";
     return;
   }
 
-  estadoActualEl.textContent = `Si registras ahora, el estado será ${detectedAttendance.status}.`;
+  estadoActualEl.textContent = `Bloque detectado: ${detectedAttendance.blockName}. Estado esperado: ${statusLabel.toLowerCase()}.`;
 }
 
 function escapeHtml(value = "") {
@@ -300,18 +312,18 @@ async function registerAttendance() {
   const detectedAttendance = getDetectedAttendance(now);
 
   if (!role) {
-    setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
+    setMessage("error", "Faltan datos para registrar la entrada: selecciona un rol.");
     rolEl.focus();
     return;
   }
 
   if (nombreEl.disabled) {
-    setMessage("error", "No hay nombres disponibles para el rol seleccionado.");
+    setMessage("error", "Faltan datos para registrar la entrada: no hay nombres disponibles para el rol seleccionado.");
     return;
   }
 
   if (!name) {
-    setMessage("error", "Selecciona una persona antes de registrar el marcaje.");
+    setMessage("error", "Faltan datos para registrar la entrada: selecciona una persona.");
     nombreEl.focus();
     return;
   }
@@ -322,7 +334,10 @@ async function registerAttendance() {
   isSubmitting = true;
   btnRegistrar.disabled = true;
   btnRegistrar.textContent = "Registrando...";
-  setMessage("info", `Validando registro para ${name} en el bloque ${blockName}...`);
+  setMessage(
+    "info",
+    `Procesando registro de entrada para ${name}. Bloque detectado: ${blockName}. Estado esperado: ${formatStatusLabel(status, detectedAttendance.isOutsideBlock)}.`
+  );
 
   try {
     const { data: existingRecord, error: searchError } = await supabase
@@ -335,13 +350,13 @@ async function registerAttendance() {
       .limit(1);
 
     if (searchError) {
-      throw new Error("No fue posible validar si ya existe un marcaje previo.");
+      throw new Error("Supabase no permitió validar si la entrada ya existía. Intenta nuevamente.");
     }
 
     if (existingRecord && existingRecord.length > 0) {
       setMessage(
         "error",
-        `Ya existe un marcaje para ${name} como ${role} hoy en el bloque ${blockName}. No se registró un duplicado.`
+        `Entrada duplicada detectada: ${name} ya tiene un registro hoy en el bloque ${blockName}. No se realizó un segundo registro.`
       );
       return;
     }
@@ -360,22 +375,20 @@ async function registerAttendance() {
     ]);
 
     if (insertError) {
-      throw new Error("Supabase no pudo guardar el marcaje. Revisa la conexión e intenta nuevamente.");
+      throw new Error("Supabase no pudo guardar la entrada. Revisa la conexión e intenta nuevamente.");
     }
 
     setMessage(
       "success",
       detectedAttendance.isOutsideBlock
-        ? `Marcaje registrado correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
-        : status === "atrasado"
-          ? `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
-          : `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
+        ? `Entrada registrada con éxito para ${name}. Bloque detectado: fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
+        : `Entrada registrada con éxito para ${name}. Bloque detectado: ${blockName}. Estado detectado: ${status}. Hora: ${horaVisible}.`
     );
     observacionEl.value = "";
     await loadTodayRecords();
   } catch (error) {
     console.error(error);
-    setMessage("error", error.message || "Ocurrió un problema inesperado al registrar el marcaje.");
+    setMessage("error", error.message || "Supabase devolvió un error al registrar la entrada. Intenta nuevamente.");
   } finally {
     isSubmitting = false;
     btnRegistrar.disabled = false;
