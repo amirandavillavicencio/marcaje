@@ -51,10 +51,6 @@ const estadoActualEl = document.getElementById("estadoActual");
 const fechaActualEl = document.getElementById("fechaActual");
 const horaActualEl = document.getElementById("horaActual");
 const estadoPrevistoEl = document.getElementById("estadoPrevisto");
-const roleToggleEl = document.getElementById("roleToggle");
-const estadoEsperadoBoxEl = document.getElementById("estadoEsperadoBox");
-const relojTiempoRealEl = document.getElementById("relojTiempoReal");
-const relojFechaCompletaEl = document.getElementById("relojFechaCompleta");
 
 let isSubmitting = false;
 let isLoadingList = false;
@@ -193,91 +189,6 @@ function populateNames() {
   setMessage("info", "Selecciona una persona y luego registra la entrada o la salida desde este formulario.");
 }
 
-function syncLiveClockHeader(now = new Date()) {
-  if (relojTiempoRealEl) {
-    relojTiempoRealEl.textContent = formatHora(now);
-  }
-
-  if (relojFechaCompletaEl) {
-    relojFechaCompletaEl.textContent = formatFecha(now);
-  }
-}
-
-function syncRoleToggleState() {
-  if (!roleToggleEl) {
-    return;
-  }
-
-  roleToggleEl.querySelectorAll(".role-toggle-btn").forEach((button) => {
-    const isActive = button.dataset.roleValue === rolEl.value;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
-  });
-}
-
-function applyExpectedStatusUI() {
-  if (!estadoEsperadoBoxEl || !estadoPrevistoEl) {
-    return;
-  }
-
-  const estadoTexto = estadoPrevistoEl.textContent.trim().toLowerCase();
-  const estadoVisual = estadoTexto.includes("atrasado")
-    ? "estado-atrasado"
-    : estadoTexto.includes("presente")
-      ? "estado-presente"
-      : "estado-pendiente";
-
-  estadoEsperadoBoxEl.classList.remove("estado-atrasado", "estado-presente", "estado-pendiente");
-  estadoEsperadoBoxEl.classList.add(estadoVisual);
-
-  if (estadoVisual === "estado-atrasado") {
-    btnRegistrar.classList.add("is-hidden-by-state");
-    btnRegistrarSalida.classList.remove("is-hidden-by-state");
-    return;
-  }
-
-  if (estadoVisual === "estado-presente") {
-    btnRegistrar.classList.remove("is-hidden-by-state");
-    btnRegistrarSalida.classList.add("is-hidden-by-state");
-    return;
-  }
-
-  btnRegistrar.classList.remove("is-hidden-by-state");
-  btnRegistrarSalida.classList.remove("is-hidden-by-state");
-}
-
-function enhanceRenderedRecords() {
-  listaRegistrosEl.querySelectorAll(".registro").forEach((registro) => {
-    const badge = registro.querySelector(".badge");
-    const estadoTexto = badge ? badge.textContent.trim().toLowerCase() : "";
-    registro.dataset.uiStatus = estadoTexto.includes("atrasado") ? "atrasado" : "presente";
-  });
-}
-
-function initRoleToggle() {
-  if (!roleToggleEl) {
-    return;
-  }
-
-  roleToggleEl.addEventListener("click", (event) => {
-    const toggleButton = event.target.closest(".role-toggle-btn");
-
-    if (!toggleButton || toggleButton.disabled) {
-      return;
-    }
-
-    const nextValue = toggleButton.dataset.roleValue || "";
-    if (rolEl.value === nextValue) {
-      return;
-    }
-
-    rolEl.value = nextValue;
-    rolEl.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-
-  syncRoleToggleState();
-}
-
 function updateClockPanel() {
   const now = new Date();
   const detectedAttendance = getDetectedAttendance(now);
@@ -286,7 +197,6 @@ function updateClockPanel() {
     detectedAttendance.isOutsideBlock
   );
 
-  syncLiveClockHeader(now);
   fechaActualEl.textContent = formatFecha(now);
   horaActualEl.textContent = formatHora(now);
   bloqueActualEl.textContent = detectedAttendance.blockLabel;
@@ -294,12 +204,10 @@ function updateClockPanel() {
 
   if (detectedAttendance.isOutsideBlock) {
     estadoActualEl.textContent = "Bloque detectado: fuera de bloque. Estado esperado: presente.";
-    applyExpectedStatusUI();
     return;
   }
 
   estadoActualEl.textContent = `Bloque detectado: ${detectedAttendance.blockName}. Estado esperado: ${statusLabel.toLowerCase()}.`;
-  applyExpectedStatusUI();
 }
 
 function escapeHtml(value = "") {
@@ -353,7 +261,6 @@ function getExitAction(record) {
 function renderRecords(records) {
   if (!records || records.length === 0) {
     listaRegistrosEl.innerHTML = '<div class="empty-state">Todavía no hay registros para hoy.</div>';
-    enhanceRenderedRecords();
     return;
   }
 
@@ -392,8 +299,6 @@ function renderRecords(records) {
       `;
     })
     .join("");
-
-  enhanceRenderedRecords();
 }
 
 async function loadTodayRecords() {
@@ -658,11 +563,7 @@ function startClock() {
   clockTimerId = window.setInterval(updateClockPanel, 1000);
 }
 
-rolEl.addEventListener("change", () => {
-  populateNames();
-  syncRoleToggleState();
-  applyExpectedStatusUI();
-});
+rolEl.addEventListener("change", populateNames);
 btnRegistrar.addEventListener("click", registerAttendance);
 btnRegistrarSalida.addEventListener("click", registerExit);
 btnActualizar.addEventListener("click", loadTodayRecords);
@@ -684,7 +585,6 @@ listaRegistrosEl.addEventListener("click", (event) => {
   registerExit(recordId, recordName);
 });
 
-initRoleToggle();
 populateNames();
 startClock();
 loadTodayRecords();
