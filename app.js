@@ -429,8 +429,32 @@ function wait(ms) {
 
 async function refreshRecordsAfterUpdate() {
   await loadTodayRecords();
+  updatePrimaryAction();
   await wait(300);
   await loadTodayRecords();
+  updatePrimaryAction();
+}
+
+function applyExitUpdateToCurrentState(recordId, horaSalida) {
+  const normalizedRecordId = String(recordId);
+  let didUpdate = false;
+
+  todayRecords = todayRecords.map((record) => {
+    if (String(record.id) !== normalizedRecordId) {
+      return record;
+    }
+
+    didUpdate = true;
+    return {
+      ...record,
+      hora_salida: horaSalida
+    };
+  });
+
+  if (didUpdate) {
+    renderRecords(todayRecords);
+    updatePrimaryAction();
+  }
 }
 
 async function registerAttendance() {
@@ -589,6 +613,8 @@ async function registerExit(recordId = null, recordName = null) {
     setMessage("info", `Registrando la salida del registro de ${name}.`);
   }
 
+  let previousRecordsSnapshot = null;
+
   try {
     let targetRecordId = recordId;
 
@@ -643,15 +669,39 @@ async function registerExit(recordId = null, recordName = null) {
       .select("id, hora_salida")
       .single();
 
-    if (updateError || !updatedRecord || !updatedRecord.hora_salida) {
+    if (updateError) {
+      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
+    }
+
+    const savedExitTime = updatedRecord?.hora_salida || horaSalida;
+    previousRecordsSnapshot = todayRecords.map((record) => ({ ...record }));
+    applyExitUpdateToCurrentState(normalizedRecordId, savedExitTime);
+    await refreshRecordsAfterUpdate();
+
+    const confirmedRecord = todayRecords.find((record) => String(record.id) === String(normalizedRecordId));
+    const hasConfirmedExit = typeof confirmedRecord?.hora_salida === "string"
+      ? confirmedRecord.hora_salida.trim() !== ""
+      : Boolean(confirmedRecord?.hora_salida);
+
+    if (!hasConfirmedExit) {
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
     setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
-    await refreshRecordsAfterUpdate();
   } catch (error) {
+    if (previousRecordsSnapshot) {
+      todayRecords = previousRecordsSnapshot;
+      renderRecords(todayRecords);
+      updatePrimaryAction();
+    }
+
     console.error(error);
-    setMessage("error", error.message || "Supabase devolvió un error al registrar la salida. Intenta nuevamente.");
+    setMessage(
+      "error",
+      error.message === "Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente."
+        ? error.message
+        : "Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente."
+    );
   } finally {
     isSubmitting = false;
     btnRegistrarSalida.disabled = false;
