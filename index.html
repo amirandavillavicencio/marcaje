@@ -14,29 +14,42 @@
       <p>Selecciona el rol y la persona para registrar entrada o salida desde este mismo formulario. La fecha, hora, bloque y estado se detectan automáticamente desde este equipo.</p>
     </header>
 
-    <section class="card" aria-labelledby="registro-title">
-      <div class="section-heading">
+    <section class="card card-hero" aria-labelledby="registro-title">
+      <div class="section-heading section-heading-stack">
         <div>
           <h2 id="registro-title">Registrar marcaje</h2>
-          <p>Usa la misma selección de rol y nombre para registrar entrada o completar la salida del día.</p>
+          <p>Usa la misma selección de rol y nombre para registrar la entrada o completar la salida del día.</p>
         </div>
-        <div class="status-panel" id="resumenBloque" aria-live="polite">
-          <span class="status-label">Bloque actual</span>
-          <strong id="bloqueActual">Fuera de bloque</strong>
+
+        <div class="clock-panel" aria-live="polite">
+          <span class="status-label">Fecha y hora actual</span>
+          <strong id="fechaActual">--</strong>
+          <div class="clock-time-row">
+            <span id="horaActual">--:--:--</span>
+            <span class="clock-divider" aria-hidden="true"></span>
+            <span id="bloqueActual">Fuera de bloque</span>
+          </div>
           <small id="estadoActual">El sistema validará el estado al registrar.</small>
         </div>
       </div>
 
-      <div class="grid">
-        <div>
-          <label for="rol">Rol</label>
-          <select id="rol">
-            <option value="">Selecciona un rol</option>
-            <option value="administrador">Administrador</option>
-            <option value="tutor">Tutor</option>
-          </select>
+      <div class="role-selector" aria-labelledby="rol-toggle-label">
+        <div class="role-selector-header">
+          <label id="rol-toggle-label" for="rol">Rol</label>
+          <span class="helper-text">Elige el perfil para cargar los nombres disponibles.</span>
         </div>
+        <div class="role-toggle-group" role="group" aria-labelledby="rol-toggle-label">
+          <button type="button" class="role-toggle" data-role-value="administrador">Administrador</button>
+          <button type="button" class="role-toggle" data-role-value="tutor">Tutor</button>
+        </div>
+        <select id="rol" class="sr-only" aria-hidden="true" tabindex="-1">
+          <option value="">Selecciona un rol</option>
+          <option value="administrador">Administrador</option>
+          <option value="tutor">Tutor</option>
+        </select>
+      </div>
 
+      <div class="grid grid-single-mobile">
         <div>
           <label for="nombre">Nombre</label>
           <select id="nombre" disabled>
@@ -45,18 +58,15 @@
         </div>
       </div>
 
-      <div class="meta-grid" aria-label="Información automática del marcaje">
-        <div class="info-box">
-          <span class="info-label">Fecha del equipo</span>
-          <strong id="fechaActual">--</strong>
-        </div>
-        <div class="info-box">
-          <span class="info-label">Hora del equipo</span>
-          <strong id="horaActual">--:--</strong>
-        </div>
+      <div class="meta-grid meta-grid-compact" aria-label="Información automática del marcaje">
         <div class="info-box">
           <span class="info-label">Estado esperado</span>
           <strong id="estadoPrevisto">Pendiente</strong>
+        </div>
+        <div class="info-box info-box-highlight" id="estadoUsuarioPanel">
+          <span class="info-label">Estado del usuario</span>
+          <strong id="estadoUsuarioTexto">Selecciona una persona</strong>
+          <small id="estadoUsuarioDetalle">El botón principal se ajustará automáticamente.</small>
         </div>
       </div>
 
@@ -65,7 +75,11 @@
         <textarea id="observacion" rows="3" placeholder="Opcional"></textarea>
       </div>
 
-      <div class="actions actions-double">
+      <div class="actions">
+        <button id="btnAccionPrincipal" class="primary-action">Selecciona una persona</button>
+      </div>
+
+      <div class="legacy-actions" aria-hidden="true">
         <button id="btnRegistrar">Registrar marcaje</button>
         <button id="btnRegistrarSalida" class="secondary-action">Registrar salida</button>
       </div>
