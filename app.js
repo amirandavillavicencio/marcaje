@@ -576,6 +576,7 @@ async function registerExit(recordId = null, recordName = null) {
   const targetButton = recordId
     ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
     : btnRegistrarSalida;
+  const hasExitTime = (value) => (typeof value === "string" ? value.trim() !== "" : Boolean(value));
 
   if (!recordId) {
     if (!role) {
@@ -617,40 +618,30 @@ async function registerExit(recordId = null, recordName = null) {
 
   try {
     let targetRecordId = recordId;
+    let targetRecordName = name;
 
     if (!targetRecordId) {
-      const { data: openRecordData, error: searchError } = await supabase
+      const { data: candidateRecords, error: searchError } = await supabase
         .from("marcaje_personal")
-        .select("id, bloque, hora_entrada, hora_salida")
+        .select("id, nombre, rol, bloque, hora, hora_entrada, hora_salida")
         .eq("nombre", name)
         .eq("rol", role)
         .eq("fecha", fecha)
         .not("hora_entrada", "is", null)
-        .is("hora_salida", null)
-        .order("hora", { ascending: false })
-        .limit(1);
+        .order("hora", { ascending: false });
 
       if (searchError) {
+        console.error("Error real buscando entrada abierta para registrar salida", { name, role, fecha, searchError });
         throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
       }
 
-      if (!openRecordData || openRecordData.length === 0) {
-        const { data: existingRecord, error: existingRecordError } = await supabase
-          .from("marcaje_personal")
-          .select("id, bloque, hora_entrada, hora_salida")
-          .eq("nombre", name)
-          .eq("rol", role)
-          .eq("fecha", fecha)
-          .not("hora_entrada", "is", null)
-          .order("hora", { ascending: false })
-          .limit(1);
+      const openRecord = (candidateRecords || []).find((record) => !hasExitTime(record.hora_salida));
 
-        if (existingRecordError) {
-          throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
-        }
+      if (!openRecord) {
+        const latestRecord = candidateRecords?.[0];
 
-        if (existingRecord && existingRecord.length > 0 && existingRecord[0].hora_salida) {
-          setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${existingRecord[0].bloque || "sin bloque"}.`);
+        if (latestRecord && hasExitTime(latestRecord.hora_salida)) {
+          setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${latestRecord.bloque || "sin bloque"}.`);
           return;
         }
 
@@ -658,36 +649,75 @@ async function registerExit(recordId = null, recordName = null) {
         return;
       }
 
-      targetRecordId = openRecordData[0].id;
+      targetRecordId = openRecord.id;
+      targetRecordName = openRecord.nombre || targetRecordName;
     }
 
-    const normalizedRecordId = Number.isNaN(Number(targetRecordId)) ? targetRecordId : Number(targetRecordId);
+    const { data: recordToUpdate, error: targetRecordError } = await supabase
+      .from("marcaje_personal")
+      .select("id, nombre, rol, bloque, fecha, hora_entrada, hora_salida")
+      .eq("id", targetRecordId)
+      .eq("fecha", fecha)
+      .maybeSingle();
+
+    if (targetRecordError) {
+      console.error("Error real validando registro a cerrar", { targetRecordId, fecha, targetRecordError });
+      throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+    }
+
+    if (!recordToUpdate) {
+      setMessage("error", "No se encontró el registro pendiente de hoy para guardar la salida.");
+      return;
+    }
+
+    if (!recordId && (recordToUpdate.nombre !== name || recordToUpdate.rol !== role)) {
+      console.error("Registro abierto no coincide con la selección actual", { selectedName: name, selectedRole: role, recordToUpdate });
+      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
+    }
+
+    if (!recordToUpdate.hora_entrada) {
+      setMessage("error", `No existe una entrada abierta hoy para ${targetRecordName}. Primero registra la entrada y luego intenta nuevamente.`);
+      return;
+    }
+
+    if (hasExitTime(recordToUpdate.hora_salida)) {
+      setMessage("error", `La salida de hoy para ${targetRecordName} ya estaba registrada en el bloque ${recordToUpdate.bloque || "sin bloque"}.`);
+      return;
+    }
+
     const { data: updatedRecord, error: updateError } = await supabase
       .from("marcaje_personal")
       .update({ hora_salida: horaSalida })
-      .eq("id", normalizedRecordId)
+      .eq("id", recordToUpdate.id)
+      .eq("fecha", fecha)
       .select("id, hora_salida")
-      .single();
+      .maybeSingle();
 
-    if (updateError) {
+    if (updateError || !updatedRecord) {
+      console.error("Error real guardando salida en Supabase", {
+        targetRecordId: recordToUpdate.id,
+        fecha,
+        horaSalida,
+        updateError,
+        updatedRecord
+      });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
-    const savedExitTime = updatedRecord?.hora_salida || horaSalida;
+    const savedExitTime = updatedRecord.hora_salida || horaSalida;
     previousRecordsSnapshot = todayRecords.map((record) => ({ ...record }));
-    applyExitUpdateToCurrentState(normalizedRecordId, savedExitTime);
+    applyExitUpdateToCurrentState(recordToUpdate.id, savedExitTime);
     await refreshRecordsAfterUpdate();
 
-    const confirmedRecord = todayRecords.find((record) => String(record.id) === String(normalizedRecordId));
-    const hasConfirmedExit = typeof confirmedRecord?.hora_salida === "string"
-      ? confirmedRecord.hora_salida.trim() !== ""
-      : Boolean(confirmedRecord?.hora_salida);
+    const confirmedRecord = todayRecords.find((record) => String(record.id) === String(recordToUpdate.id));
+    const hasConfirmedExit = hasExitTime(confirmedRecord?.hora_salida);
 
     if (!hasConfirmedExit) {
+      console.error("La recarga no reflejó la salida guardada", { targetRecordId: recordToUpdate.id, confirmedRecord, todayRecords });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
-    setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
+    setMessage("success", `Salida registrada con éxito para ${targetRecordName}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
   } catch (error) {
     if (previousRecordsSnapshot) {
       todayRecords = previousRecordsSnapshot;
