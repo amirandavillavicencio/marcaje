@@ -42,6 +42,7 @@ const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
 const observacionEl = document.getElementById("observacion");
 const btnRegistrar = document.getElementById("btnRegistrar");
+const btnRegistrarSalida = document.getElementById("btnRegistrarSalida");
 const btnActualizar = document.getElementById("btnActualizar");
 const mensajeEl = document.getElementById("mensaje");
 const listaRegistrosEl = document.getElementById("listaRegistros");
@@ -248,16 +249,25 @@ function renderRecords(records) {
         ? `<p class="registro-observacion">${escapeHtml(record.observacion)}</p>`
         : "";
 
+      const statusValue = record.estado_entrada || record.estado;
+      const entryTime = record.hora_entrada || record.hora;
+      const exitTime = record.hora_salida ? formatStoredTime(record.hora_salida) : "Sin salida";
+
       return `
         <article class="registro">
           <div class="registro-top">
             <strong>${escapeHtml(record.nombre)}</strong>
-            <span class="registro-hora">${escapeHtml(formatStoredTime(record.hora))}</span>
+            <span class="registro-hora">Entrada: ${escapeHtml(formatStoredTime(entryTime))}</span>
           </div>
           <div class="registro-meta">
             <span>${escapeHtml(record.rol)}</span>
             <span>${escapeHtml(record.bloque)}</span>
-            <span class="badge ${record.estado === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(record.estado)}</span>
+            <span class="badge ${statusValue === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(statusValue || "sin estado")}</span>
+          </div>
+          <div class="registro-meta registro-meta-secondary">
+            <span>Hora entrada: ${escapeHtml(formatStoredTime(entryTime))}</span>
+            <span>Hora salida: ${escapeHtml(exitTime)}</span>
+            <span>Estado entrada: ${escapeHtml(statusValue || "sin estado")}</span>
           </div>
           ${observation}
         </article>
@@ -279,7 +289,7 @@ async function loadTodayRecords() {
     const fecha = getFechaLocal();
     const { data, error } = await supabase
       .from("marcaje_personal")
-      .select("nombre, rol, bloque, estado, hora, observacion")
+      .select("id, nombre, rol, bloque, estado, hora, observacion, hora_entrada, hora_salida, estado_entrada")
       .eq("fecha", fecha)
       .order("hora", { ascending: false });
 
@@ -370,6 +380,8 @@ async function registerAttendance() {
         estado: status,
         observacion: observation,
         hora,
+        hora_entrada: hora,
+        estado_entrada: status,
         registrado_por: "recepcion"
       }
     ]);
@@ -397,6 +409,104 @@ async function registerAttendance() {
   }
 }
 
+async function registerExit() {
+  if (isSubmitting) {
+    return;
+  }
+
+  const role = rolEl.value;
+  const name = nombreEl.value;
+  const now = new Date();
+  const fecha = getFechaLocal(now);
+  const horaSalida = now.toISOString();
+  const horaVisible = formatHora(now);
+
+  if (!role) {
+    setMessage("error", "Faltan datos para registrar la salida: selecciona un rol.");
+    rolEl.focus();
+    return;
+  }
+
+  if (nombreEl.disabled) {
+    setMessage("error", "Faltan datos para registrar la salida: no hay nombres disponibles para el rol seleccionado.");
+    return;
+  }
+
+  if (!name) {
+    setMessage("error", "Faltan datos para registrar la salida: selecciona una persona.");
+    nombreEl.focus();
+    return;
+  }
+
+  isSubmitting = true;
+  btnRegistrarSalida.disabled = true;
+  btnRegistrarSalida.textContent = "Registrando salida...";
+  setMessage("info", `Buscando una entrada abierta para ${name}.`);
+
+  try {
+    const { data: openRecordData, error: searchError } = await supabase
+      .from("marcaje_personal")
+      .select("id, hora_entrada, hora_salida")
+      .eq("nombre", name)
+      .eq("rol", role)
+      .eq("fecha", fecha)
+      .not("hora_entrada", "is", null)
+      .is("hora_salida", null)
+      .order("hora", { ascending: false })
+      .limit(1);
+
+    if (searchError) {
+      throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+    }
+
+    if (!openRecordData || openRecordData.length === 0) {
+      const { data: existingRecord, error: existingRecordError } = await supabase
+        .from("marcaje_personal")
+        .select("id, hora_entrada, hora_salida")
+        .eq("nombre", name)
+        .eq("rol", role)
+        .eq("fecha", fecha)
+        .not("hora_entrada", "is", null)
+        .order("hora", { ascending: false })
+        .limit(1);
+
+      if (existingRecordError) {
+        throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+      }
+
+      if (existingRecord && existingRecord.length > 0 && existingRecord[0].hora_salida) {
+        setMessage("error", "La salida de este registro ya fue registrada.");
+        return;
+      }
+
+      setMessage("error", "No hay una entrada registrada para cerrar");
+      return;
+    }
+
+    const openRecord = openRecordData[0];
+
+    const { error: updateError } = await supabase
+      .from("marcaje_personal")
+      .update({ hora_salida: horaSalida })
+      .eq("id", openRecord.id);
+
+    if (updateError) {
+      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
+    }
+
+    setMessage("success", `Salida registrada con éxito para ${name}. Hora: ${horaVisible}.`);
+    await loadTodayRecords();
+  } catch (error) {
+    console.error(error);
+    setMessage("error", error.message || "Supabase devolvió un error al registrar la salida. Intenta nuevamente.");
+  } finally {
+    isSubmitting = false;
+    btnRegistrarSalida.disabled = false;
+    btnRegistrarSalida.textContent = "Registrar salida";
+    updateClockPanel();
+  }
+}
+
 function startClock() {
   updateClockPanel();
   clockTimerId = window.setInterval(updateClockPanel, 1000);
@@ -404,6 +514,7 @@ function startClock() {
 
 rolEl.addEventListener("change", populateNames);
 btnRegistrar.addEventListener("click", registerAttendance);
+btnRegistrarSalida.addEventListener("click", registerExit);
 btnActualizar.addEventListener("click", loadTodayRecords);
 
 populateNames();
