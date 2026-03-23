@@ -623,22 +623,23 @@ async function registerExit(recordId = null, recordName = null) {
     if (!targetRecordId) {
       const { data: candidateRecords, error: searchError } = await supabase
         .from("marcaje_personal")
-        .select("id, nombre, rol, bloque, hora, hora_entrada, hora_salida")
+        .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
         .eq("nombre", name)
-        .eq("rol", role)
         .eq("fecha", fecha)
         .not("hora_entrada", "is", null)
+        .order("hora_entrada", { ascending: false })
         .order("hora", { ascending: false });
 
       if (searchError) {
         console.error("Error real buscando entrada abierta para registrar salida", { name, role, fecha, searchError });
-        throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+        throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
       }
 
-      const openRecord = (candidateRecords || []).find((record) => !hasExitTime(record.hora_salida));
+      const matchingRecords = (candidateRecords || []).filter((record) => record.nombre === name && (!role || record.rol === role));
+      const openRecord = matchingRecords.find((record) => !hasExitTime(record.hora_salida));
 
       if (!openRecord) {
-        const latestRecord = candidateRecords?.[0];
+        const latestRecord = matchingRecords[0];
 
         if (latestRecord && hasExitTime(latestRecord.hora_salida)) {
           setMessage("error", `La salida de hoy para ${name} ya estaba registrada en el bloque ${latestRecord.bloque || "sin bloque"}.`);
@@ -662,7 +663,7 @@ async function registerExit(recordId = null, recordName = null) {
 
     if (targetRecordError) {
       console.error("Error real validando registro a cerrar", { targetRecordId, fecha, targetRecordError });
-      throw new Error("Supabase no permitió validar si existe una entrada abierta para cerrar. Intenta nuevamente.");
+      throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
     if (!recordToUpdate) {
@@ -690,6 +691,7 @@ async function registerExit(recordId = null, recordName = null) {
       .update({ hora_salida: horaSalida })
       .eq("id", recordToUpdate.id)
       .eq("fecha", fecha)
+      .is("hora_salida", null)
       .select("id, hora_salida")
       .maybeSingle();
 
