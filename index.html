@@ -4,90 +4,134 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Marcaje CIAC</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <p class="eyebrow">CIAC</p>
-      <h1>Marcaje de administradores y tutores</h1>
-      <p>Selecciona el rol y la persona para registrar entrada o salida desde este mismo formulario. La fecha, hora, bloque y estado se detectan automáticamente desde este equipo.</p>
+  <main class="app-shell">
+    <header class="topbar card" aria-label="Encabezado del sistema CIAC">
+      <div class="brand-group">
+        <div class="brand-mark" aria-hidden="true">CIAC</div>
+        <div class="brand-copy">
+          <span class="eyebrow">Universidad Técnica Federico Santa María</span>
+          <h1>Marcaje de personal</h1>
+          <p>Sistema de asistencia para administradores y tutores.</p>
+        </div>
+      </div>
+
+      <div class="topbar-clock" aria-live="polite">
+        <span class="topbar-clock-label">Fecha y hora actual</span>
+        <strong id="fechaActual">--</strong>
+        <span id="horaActual">--:--:--</span>
+      </div>
     </header>
 
-    <section class="card card-hero" aria-labelledby="registro-title">
-      <div class="section-heading section-heading-stack">
-        <div>
-          <h2 id="registro-title">Registrar marcaje</h2>
-          <p>Usa la misma selección de rol y nombre para registrar la entrada o completar la salida del día.</p>
-        </div>
-
-        <div class="clock-panel" aria-live="polite">
-          <span class="status-label">Fecha y hora actual</span>
-          <strong id="fechaActual">--</strong>
-          <div class="clock-time-row">
-            <span id="horaActual">--:--:--</span>
-            <span class="clock-divider" aria-hidden="true"></span>
-            <span id="bloqueActual">Fuera de bloque</span>
+    <section class="dashboard-grid">
+      <section class="card form-card" aria-labelledby="registro-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="registro-title">Registrar asistencia</h2>
+            <p>Selecciona rol y persona. El sistema ajusta automáticamente si corresponde entrada o salida.</p>
           </div>
-          <small id="estadoActual">El sistema validará el estado al registrar.</small>
         </div>
-      </div>
 
-        <div>
-          <label>Bloque detectado</label>
-          <div id="bloqueDetectado" class="info-box">Se detectará al registrar</div>
+        <div class="form-stack">
+          <div class="field role-selector">
+            <div class="role-selector-header">
+              <label for="rol">Rol</label>
+              <span class="helper-text">Elige el perfil del personal</span>
+            </div>
+            <div class="role-toggle-group" aria-label="Selecciona un rol">
+              <button type="button" class="role-toggle" data-role-value="administrador" aria-pressed="false">
+                Administrador
+              </button>
+              <button type="button" class="role-toggle" data-role-value="tutor" aria-pressed="false">
+                Tutor
+              </button>
+            </div>
+            <select id="rol" class="sr-only" aria-hidden="true" tabindex="-1">
+              <option value="">Selecciona un rol</option>
+              <option value="administrador">Administrador</option>
+              <option value="tutor">Tutor</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="nombre">Persona</label>
+            <select id="nombre" disabled>
+              <option value="">Primero selecciona un rol</option>
+            </select>
+          </div>
+
+          <section class="status-card info-box info-box-highlight" id="estadoUsuarioPanel" aria-label="Estado del usuario seleccionado">
+            <div class="status-card-header">
+              <span class="info-label">Estado del usuario</span>
+              <span id="bloqueActual" class="status-pill">Fuera de bloque</span>
+            </div>
+            <strong id="estadoUsuarioTexto">Selecciona una persona</strong>
+            <small id="estadoUsuarioDetalle">El botón principal se ajustará automáticamente.</small>
+
+            <div class="status-grid" aria-label="Información automática del marcaje">
+              <div class="metric-box">
+                <span class="info-label">Bloque detectado</span>
+                <strong id="bloqueDetectado">Se detectará al registrar</strong>
+              </div>
+              <div class="metric-box">
+                <span class="info-label">Estado detectado</span>
+                <strong id="estadoDetectado">Se detectará al registrar</strong>
+              </div>
+              <div class="metric-box">
+                <span class="info-label">Estado esperado</span>
+                <strong id="estadoPrevisto">Pendiente</strong>
+              </div>
+              <div class="metric-box metric-box-wide">
+                <span class="info-label">Resumen del sistema</span>
+                <small id="estadoActual">El sistema validará el estado al registrar.</small>
+              </div>
+            </div>
+          </section>
+
+          <div class="field">
+            <label for="observacion">Observación</label>
+            <textarea id="observacion" rows="4" placeholder="Agregar comentario opcional"></textarea>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="btnAccionPrincipal" class="primary-action">Selecciona una persona</button>
+          </div>
+
+          <div class="legacy-actions" aria-hidden="true">
+            <button type="button" id="btnRegistrar">Registrar marcaje</button>
+            <button type="button" id="btnRegistrarSalida" class="secondary-action">Registrar salida</button>
+          </div>
+
+          <p id="mensaje" class="mensaje" role="status" aria-live="polite"></p>
         </div>
-        <select id="rol" class="sr-only" aria-hidden="true" tabindex="-1">
-          <option value="">Selecciona un rol</option>
-          <option value="administrador">Administrador</option>
-          <option value="tutor">Tutor</option>
-        </select>
-      </div>
+      </section>
 
-      <div class="grid grid-single-mobile">
-        <div>
-          <label>Estado detectado</label>
-          <div id="estadoDetectado" class="info-box">Se detectará al registrar</div>
+      <section class="card records-card" aria-labelledby="registros-title">
+        <div class="list-header">
+          <div>
+            <h2 id="registros-title">Registros del día</h2>
+            <p id="subtituloLista">Listado consolidado de entradas y salidas registradas hoy.</p>
+          </div>
+          <button type="button" id="btnActualizar" class="secondary">Actualizar</button>
         </div>
-      </div>
 
-      <div class="meta-grid meta-grid-compact" aria-label="Información automática del marcaje">
-        <div class="info-box">
-          <span class="info-label">Estado esperado</span>
-          <strong id="estadoPrevisto">Pendiente</strong>
+        <div class="records-table-shell">
+          <div class="records-table-head" aria-hidden="true">
+            <span>Persona</span>
+            <span>Horario</span>
+            <span>Estado</span>
+          </div>
+          <div id="listaRegistros" class="lista-registros"></div>
         </div>
-        <div class="info-box info-box-highlight" id="estadoUsuarioPanel">
-          <span class="info-label">Estado del usuario</span>
-          <strong id="estadoUsuarioTexto">Selecciona una persona</strong>
-          <small id="estadoUsuarioDetalle">El botón principal se ajustará automáticamente.</small>
-        </div>
-      </div>
-
-      <div class="field">
-        <label for="observacion">Observación</label>
-        <textarea id="observacion" rows="3" placeholder="Opcional"></textarea>
-      </div>
-
-      <div class="actions">
-        <button id="btnAccionPrincipal" class="primary-action">Selecciona una persona</button>
-      </div>
-
-      <div class="legacy-actions" aria-hidden="true">
-        <button id="btnRegistrar">Registrar marcaje</button>
-        <button id="btnRegistrarSalida" class="secondary-action">Registrar salida</button>
-      </div>
-      <p id="mensaje" class="mensaje" role="status" aria-live="polite"></p>
-    </section>
-
-    <section class="card" aria-labelledby="registros-title">
-      <div class="list-header">
-        <div>
-          <h2 id="registros-title">Registros de hoy</h2>
-          <p id="subtituloLista">Listado ordenado por hora de marcaje.</p>
-        </div>
-        <button id="btnActualizar" class="secondary">Actualizar</button>
-      </div>
-      <div id="listaRegistros" class="lista-registros"></div>
+      </section>
     </section>
   </main>
 
