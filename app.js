@@ -30,10 +30,21 @@ const personas = [
   { nombre: "Cristóbal Darío Molina Cárdenas", rol: "tutor" }
 ];
 
+const BLOQUES = [
+  // Ajustar estos horarios si cambia el horario institucional real.
+  { nombre: "3-4", inicio: "09:40", fin: "11:09" },
+  { nombre: "5-6", inicio: "11:10", fin: "12:39" },
+  { nombre: "almuerzo", inicio: "12:40", fin: "14:09" },
+  { nombre: "7-8", inicio: "14:10", fin: "15:39" },
+  { nombre: "9-10", inicio: "15:40", fin: "17:09" }
+];
+
+const MINUTOS_PRESENTE = 5;
+
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
-const bloqueEl = document.getElementById("bloque");
-const estadoEl = document.getElementById("estado");
+const bloqueDetectadoEl = document.getElementById("bloqueDetectado");
+const estadoDetectadoEl = document.getElementById("estadoDetectado");
 const observacionEl = document.getElementById("observacion");
 const btnRegistrar = document.getElementById("btnRegistrar");
 const btnActualizar = document.getElementById("btnActualizar");
@@ -46,6 +57,48 @@ function getFechaLocal() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getMinutosDelDia(fecha = new Date()) {
+  return fecha.getHours() * 60 + fecha.getMinutes();
+}
+
+function parseHora(hora) {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
+}
+
+function detectarMarcaje(fecha = new Date()) {
+  const minutosActuales = getMinutosDelDia(fecha);
+
+  for (const bloque of BLOQUES) {
+    const inicio = parseHora(bloque.inicio);
+    const fin = parseHora(bloque.fin);
+
+    if (minutosActuales < inicio || minutosActuales > fin) {
+      continue;
+    }
+
+    return {
+      bloque: bloque.nombre,
+      estado: minutosActuales <= inicio + MINUTOS_PRESENTE - 1 ? "presente" : "atrasado"
+    };
+  }
+
+  return null;
+}
+
+function actualizarDeteccionVisual() {
+  const deteccion = detectarMarcaje();
+
+  if (!deteccion) {
+    bloqueDetectadoEl.textContent = "Sin bloque válido";
+    estadoDetectadoEl.textContent = "No registrable";
+    return;
+  }
+
+  bloqueDetectadoEl.textContent = deteccion.bloque;
+  estadoDetectadoEl.textContent = deteccion.estado;
 }
 
 function poblarNombres() {
@@ -67,17 +120,24 @@ function poblarNombres() {
 async function registrarAsistencia() {
   const rol = rolEl.value;
   const nombre = nombreEl.value;
-  const bloque = bloqueEl.value;
-  const estado = estadoEl.value;
   const observacion = observacionEl.value.trim();
   const fecha = getFechaLocal();
+  const deteccion = detectarMarcaje();
 
-  if (!rol || !nombre || !bloque) {
-    mensajeEl.textContent = "Completa rol, nombre y bloque.";
+  if (!rol || !nombre) {
+    mensajeEl.textContent = "Completa rol y nombre.";
     return;
   }
 
-  mensajeEl.textContent = "Registrando...";
+  if (!deteccion) {
+    actualizarDeteccionVisual();
+    mensajeEl.textContent = "No se puede registrar: la hora actual no corresponde a ningún bloque válido.";
+    return;
+  }
+
+  const { bloque, estado } = deteccion;
+  actualizarDeteccionVisual();
+  mensajeEl.textContent = `Registrando... Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
 
   const { data: existente, error: errorBusqueda } = await supabase
     .from("marcaje_personal")
@@ -95,7 +155,7 @@ async function registrarAsistencia() {
   }
 
   if (existente && existente.length > 0) {
-    mensajeEl.textContent = "Esa persona ya fue registrada hoy en ese bloque.";
+    mensajeEl.textContent = `Esa persona ya fue registrada hoy en el bloque ${bloque}. Estado detectado: ${estado}.`;
     return;
   }
 
@@ -119,7 +179,7 @@ async function registrarAsistencia() {
     return;
   }
 
-  mensajeEl.textContent = "Asistencia registrada correctamente.";
+  mensajeEl.textContent = `Asistencia registrada correctamente. Bloque detectado: ${bloque}. Estado detectado: ${estado}.`;
   observacionEl.value = "";
   await cargarRegistrosHoy();
 }
@@ -167,4 +227,6 @@ rolEl.addEventListener("change", poblarNombres);
 btnRegistrar.addEventListener("click", registrarAsistencia);
 btnActualizar.addEventListener("click", cargarRegistrosHoy);
 
+actualizarDeteccionVisual();
+setInterval(actualizarDeteccionVisual, 30000);
 cargarRegistrosHoy();
