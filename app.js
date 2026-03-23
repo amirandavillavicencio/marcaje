@@ -569,8 +569,13 @@ async function registerExit(recordId = null, recordName = null) {
     return;
   }
 
-  const role = rolEl.value;
-  const name = recordName || nombreEl.value;
+  const selectedRole = rolEl.value;
+  const selectedName = nombreEl.value;
+  const name = recordName || selectedName;
+  const recordFromState = recordId
+    ? todayRecords.find((record) => String(record.id) === String(recordId))
+    : todayRecords.find((record) => record.nombre === name && record.rol === selectedRole && !hasStoredTime(record.hora_salida));
+  const role = recordFromState?.rol || selectedRole || PERSONAS.find((person) => person.nombre === name)?.rol || "";
   const now = new Date();
   const fecha = getFechaLocal(now);
   const horaSalida = getHoraLocal(now);
@@ -578,6 +583,14 @@ async function registerExit(recordId = null, recordName = null) {
   const targetButton = recordId
     ? listaRegistrosEl.querySelector(`[data-action="registrar-salida"][data-record-id="${recordId}"]`)
     : btnRegistrarSalida;
+  const logExitContext = (stage, extra = {}) => {
+    console.debug(`Registrar salida: ${stage}`, {
+      selectedPerson: name,
+      selectedRole: role || null,
+      fecha,
+      ...extra
+    });
+  };
 
   if (!recordId) {
     if (!role) {
@@ -626,19 +639,14 @@ async function registerExit(recordId = null, recordName = null) {
         nombre: name,
         rol: role || null,
         fecha,
-        hora_entrada_requerida: true,
-        hora_salida_pendiente: [null, ""]
+        hora_entrada: "not.is.null",
+        hora_salida: "is.null o eq.''"
       };
-      console.debug("Registrar salida: buscando registro abierto", {
-        selectedName: name,
-        selectedRole: role,
-        fecha,
-        filters: searchFilters
-      });
+      logExitContext("buscando registro abierto", { filters: searchFilters });
 
       let searchQuery = supabase
         .from("marcaje_personal")
-        .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida")
+        .select("id, nombre, rol, bloque, fecha, hora, hora_entrada, hora_salida", { count: "exact" })
         .eq("nombre", name)
         .eq("fecha", fecha)
         .not("hora_entrada", "is", null)
@@ -649,20 +657,27 @@ async function registerExit(recordId = null, recordName = null) {
         searchQuery = searchQuery.eq("rol", role);
       }
 
-      const { data: candidateRecords, error: searchError } = await searchQuery;
+      const { data: candidateRecords, error: searchError, count: candidateCount } = await searchQuery;
 
       if (searchError) {
         console.error("Error real buscando entrada abierta para registrar salida", {
-          selectedName: name,
-          selectedRole: role,
+          selectedPerson: name,
+          selectedRole: role || null,
           fecha,
           filters: searchFilters,
-          searchError
+          error: searchError,
+          fullError: searchError
         });
         throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
       }
 
       const matchingRecords = (candidateRecords || []).filter((record) => record.nombre === name && (!role || record.rol === role));
+      logExitContext("resultado búsqueda registro abierto", {
+        filters: searchFilters,
+        rowsMatched: candidateCount ?? matchingRecords.length,
+        candidateRecords,
+        matchingRows: matchingRecords.length
+      });
       const openRecord = matchingRecords.find((record) => !hasStoredTime(record.hora_salida));
 
       if (!openRecord) {
@@ -687,12 +702,7 @@ async function registerExit(recordId = null, recordName = null) {
       rol: role || null,
       fecha
     };
-    console.debug("Registrar salida: validando registro objetivo", {
-      selectedName: name,
-      selectedRole: role,
-      fecha,
-      filters: targetFilters
-    });
+    logExitContext("validando registro objetivo", { filters: targetFilters });
 
     let targetRecordQuery = supabase
       .from("marcaje_personal")
@@ -709,11 +719,12 @@ async function registerExit(recordId = null, recordName = null) {
 
     if (targetRecordError) {
       console.error("Error real validando registro a cerrar", {
-        selectedName: name,
-        selectedRole: role,
+        selectedPerson: name,
+        selectedRole: role || null,
         fecha,
         filters: targetFilters,
-        targetRecordError
+        error: targetRecordError,
+        fullError: targetRecordError
       });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
@@ -724,7 +735,11 @@ async function registerExit(recordId = null, recordName = null) {
     }
 
     if (!recordId && (recordToUpdate.nombre !== name || recordToUpdate.rol !== role)) {
-      console.error("Registro abierto no coincide con la selección actual", { selectedName: name, selectedRole: role, recordToUpdate });
+      console.error("Registro abierto no coincide con la selección actual", {
+        selectedPerson: name,
+        selectedRole: role || null,
+        recordToUpdate
+      });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
     }
 
@@ -743,14 +758,13 @@ async function registerExit(recordId = null, recordName = null) {
       nombre: targetRecordName,
       rol: role || null,
       fecha,
-      hora_salida_pendiente: [null, ""]
+      hora_entrada: recordToUpdate.hora_entrada,
+      hora_salida_actual: recordToUpdate.hora_salida ?? null
     };
-    console.debug("Registrar salida: actualizando registro abierto", {
-      selectedName: name,
-      selectedRole: role,
-      fecha,
+    logExitContext("actualizando registro abierto", {
       horaSalida,
-      filters: updateFilters
+      filters: updateFilters,
+      rowsMatched: 1
     });
 
     let updateQuery = supabase
@@ -759,8 +773,7 @@ async function registerExit(recordId = null, recordName = null) {
       .eq("id", recordToUpdate.id)
       .eq("nombre", targetRecordName)
       .eq("fecha", fecha)
-      .or("hora_salida.is.null,hora_salida.eq.")
-      .select("id, nombre, fecha, hora_salida");
+      .select("id, nombre, rol, fecha, hora_entrada, hora_salida");
 
     if (role) {
       updateQuery = updateQuery.eq("rol", role);
@@ -771,13 +784,15 @@ async function registerExit(recordId = null, recordName = null) {
 
     if (updateError || !updatedRecord) {
       console.error("Error real guardando salida en Supabase", {
-        selectedName: name,
-        selectedRole: role,
+        selectedPerson: name,
+        selectedRole: role || null,
         targetRecordId: recordToUpdate.id,
         fecha,
         horaSalida,
         filters: updateFilters,
-        updateError,
+        rowsMatched: Array.isArray(updatedRecords) ? updatedRecords.length : updatedRecords ? 1 : 0,
+        error: updateError,
+        fullError: updateError,
         updatedRecords
       });
       throw new Error("Supabase no pudo guardar la salida. Revisa la conexión e intenta nuevamente.");
