@@ -269,10 +269,12 @@ button.secondary {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
+  text-transform: capitalize;
 }
 
 .badge-ok {
@@ -285,9 +287,19 @@ button.secondary {
   color: var(--badge-warn-text);
 }
 
+.badge-type {
+  background: #e8eefc;
+  color: #23406d;
+}
+
+.badge-type-exit {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
 .registro-observacion {
   margin: 10px 0 0;
-  color: var(--text);
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -300,14 +312,23 @@ button.secondary {
   background: var(--error-bg);
 }
 
+.actions-double {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.secondary-action {
+  background: #25559a;
+}
+
+.secondary-action:hover:not(:disabled) {
+  background: #1b447c;
+}
+
 @media (max-width: 700px) {
   .app {
     padding: 16px;
-  }
-
-  .grid,
-  .meta-grid {
-    grid-template-columns: 1fr;
   }
 
   .section-heading,
@@ -316,7 +337,18 @@ button.secondary {
     align-items: stretch;
   }
 
+  .grid,
+  .meta-grid,
+  .actions-double {
+    grid-template-columns: 1fr;
+  }
+
   button.secondary {
     width: 100%;
+  }
+
+  .status-panel {
+    width: 100%;
+    min-width: 0;
   }
 }

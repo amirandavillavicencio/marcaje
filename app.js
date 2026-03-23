@@ -41,7 +41,8 @@ const BLOCKS = [
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
 const observacionEl = document.getElementById("observacion");
-const btnRegistrar = document.getElementById("btnRegistrar");
+const btnRegistrarEntrada = document.getElementById("btnRegistrarEntrada");
+const btnRegistrarSalida = document.getElementById("btnRegistrarSalida");
 const btnActualizar = document.getElementById("btnActualizar");
 const mensajeEl = document.getElementById("mensaje");
 const listaRegistrosEl = document.getElementById("listaRegistros");
@@ -61,10 +62,6 @@ function pad(value) {
 
 function getFechaLocal(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-function getHoraLocal(date = new Date()) {
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatFecha(date = new Date()) {
@@ -113,23 +110,26 @@ function detectStatus(block, date = new Date()) {
   return currentMinutes <= startMinutes + 5 ? "presente" : "atrasado";
 }
 
-function getDetectedAttendance(date = new Date()) {
+function getDetectedAttendance(date = new Date(), tipoMarcaje = "entrada") {
   const detectedBlock = detectBlock(date);
+  const isExit = tipoMarcaje === "salida";
 
   if (!detectedBlock) {
     return {
       blockName: "Fuera de bloque",
       blockLabel: "Fuera de bloque",
       status: "presente",
-      isOutsideBlock: true
+      isOutsideBlock: true,
+      tipoMarcajeLabel: isExit ? "salida" : "entrada"
     };
   }
 
   return {
     blockName: detectedBlock.nombre,
     blockLabel: `${detectedBlock.nombre} (${detectedBlock.inicio} a ${detectedBlock.fin})`,
-    status: detectStatus(detectedBlock, date),
-    isOutsideBlock: false
+    status: isExit ? "presente" : detectStatus(detectedBlock, date),
+    isOutsideBlock: false,
+    tipoMarcajeLabel: isExit ? "salida" : "entrada"
   };
 }
 
@@ -177,24 +177,24 @@ function populateNames() {
     nombreEl.appendChild(option);
   });
 
-  setMessage("info", "Selecciona una persona y luego registra el marcaje.");
+  setMessage("info", "Selecciona una persona y luego registra entrada o salida.");
 }
 
 function updateClockPanel() {
   const now = new Date();
-  const detectedAttendance = getDetectedAttendance(now);
+  const detectedEntry = getDetectedAttendance(now, "entrada");
 
   fechaActualEl.textContent = formatFecha(now);
   horaActualEl.textContent = formatHora(now);
-  bloqueActualEl.textContent = detectedAttendance.blockLabel;
-  estadoPrevistoEl.textContent = detectedAttendance.status;
+  bloqueActualEl.textContent = detectedEntry.blockLabel;
+  estadoPrevistoEl.textContent = detectedEntry.status;
 
-  if (detectedAttendance.isOutsideBlock) {
-    estadoActualEl.textContent = "Si registras ahora, se guardará como presente fuera de bloque.";
+  if (detectedEntry.isOutsideBlock) {
+    estadoActualEl.textContent = "Entrada y salida se registrarán como presente fuera de bloque.";
     return;
   }
 
-  estadoActualEl.textContent = `Si registras ahora, el estado será ${detectedAttendance.status}.`;
+  estadoActualEl.textContent = `Entrada: ${detectedEntry.status}. Salida: presente.`;
 }
 
 function escapeHtml(value = "") {
@@ -224,6 +224,10 @@ function formatStoredTime(value) {
   return String(value).slice(0, 8);
 }
 
+function getTipoMarcajeLabel(value = "entrada") {
+  return value === "salida" ? "Salida" : "Entrada";
+}
+
 function renderRecords(records) {
   if (!records || records.length === 0) {
     listaRegistrosEl.innerHTML = '<div class="empty-state">Todavía no hay registros para hoy.</div>';
@@ -235,6 +239,8 @@ function renderRecords(records) {
       const observation = record.observacion
         ? `<p class="registro-observacion">${escapeHtml(record.observacion)}</p>`
         : "";
+      const tipoMarcaje = record.tipo_marcaje || "entrada";
+      const isExit = tipoMarcaje === "salida";
 
       return `
         <article class="registro">
@@ -245,6 +251,7 @@ function renderRecords(records) {
           <div class="registro-meta">
             <span>${escapeHtml(record.rol)}</span>
             <span>${escapeHtml(record.bloque)}</span>
+            <span class="badge badge-type ${isExit ? "badge-type-exit" : "badge-type-entry"}">${escapeHtml(getTipoMarcajeLabel(tipoMarcaje))}</span>
             <span class="badge ${record.estado === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(record.estado)}</span>
           </div>
           ${observation}
@@ -267,7 +274,7 @@ async function loadTodayRecords() {
     const fecha = getFechaLocal();
     const { data, error } = await supabase
       .from("marcaje_personal")
-      .select("nombre, rol, bloque, estado, hora, observacion")
+      .select("nombre, rol, bloque, estado, hora, observacion, tipo_marcaje")
       .eq("fecha", fecha)
       .order("hora", { ascending: false });
 
@@ -285,7 +292,15 @@ async function loadTodayRecords() {
   }
 }
 
-async function registerAttendance() {
+function setSubmittingState(disabled, activeType) {
+  btnRegistrarEntrada.disabled = disabled;
+  btnRegistrarSalida.disabled = disabled;
+
+  btnRegistrarEntrada.textContent = disabled && activeType === "entrada" ? "Registrando entrada..." : "Registrar entrada";
+  btnRegistrarSalida.textContent = disabled && activeType === "salida" ? "Registrando salida..." : "Registrar salida";
+}
+
+async function registerAttendance(tipoMarcaje) {
   if (isSubmitting) {
     return;
   }
@@ -297,7 +312,7 @@ async function registerAttendance() {
   const fecha = getFechaLocal(now);
   const hora = now.toISOString();
   const horaVisible = formatHora(now);
-  const detectedAttendance = getDetectedAttendance(now);
+  const detectedAttendance = getDetectedAttendance(now, tipoMarcaje);
 
   if (!role) {
     setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
@@ -318,11 +333,11 @@ async function registerAttendance() {
 
   const blockName = detectedAttendance.blockName;
   const status = detectedAttendance.status;
+  const tipoMarcajeLabel = detectedAttendance.tipoMarcajeLabel;
 
   isSubmitting = true;
-  btnRegistrar.disabled = true;
-  btnRegistrar.textContent = "Registrando...";
-  setMessage("info", `Validando registro para ${name} en el bloque ${blockName}...`);
+  setSubmittingState(true, tipoMarcaje);
+  setMessage("info", `Validando ${tipoMarcajeLabel} para ${name} en el bloque ${blockName}...`);
 
   try {
     const { data: existingRecord, error: searchError } = await supabase
@@ -332,6 +347,7 @@ async function registerAttendance() {
       .eq("rol", role)
       .eq("fecha", fecha)
       .eq("bloque", blockName)
+      .eq("tipo_marcaje", tipoMarcaje)
       .limit(1);
 
     if (searchError) {
@@ -341,7 +357,7 @@ async function registerAttendance() {
     if (existingRecord && existingRecord.length > 0) {
       setMessage(
         "error",
-        `Ya existe un marcaje para ${name} como ${role} hoy en el bloque ${blockName}. No se registró un duplicado.`
+        `Ya existe una ${tipoMarcajeLabel} para ${name} como ${role} hoy en el bloque ${blockName}. No se registró un duplicado.`
       );
       return;
     }
@@ -353,6 +369,7 @@ async function registerAttendance() {
         fecha,
         bloque: blockName,
         estado: status,
+        tipo_marcaje: tipoMarcaje,
         observacion: observation,
         hora,
         registrado_por: "recepcion"
@@ -363,14 +380,24 @@ async function registerAttendance() {
       throw new Error("Supabase no pudo guardar el marcaje. Revisa la conexión e intenta nuevamente.");
     }
 
-    setMessage(
-      "success",
-      detectedAttendance.isOutsideBlock
-        ? `Marcaje registrado correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
-        : status === "atrasado"
-          ? `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
-          : `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
-    );
+    if (tipoMarcaje === "salida") {
+      setMessage(
+        "success",
+        detectedAttendance.isOutsideBlock
+          ? `Salida registrada correctamente para ${name} fuera de bloque. Hora: ${horaVisible}.`
+          : `Salida registrada correctamente para ${name}. Bloque detectado: ${blockName}. Hora: ${horaVisible}.`
+      );
+    } else {
+      setMessage(
+        "success",
+        detectedAttendance.isOutsideBlock
+          ? `Entrada registrada correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
+          : status === "atrasado"
+            ? `Entrada registrada correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
+            : `Entrada registrada correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
+      );
+    }
+
     observacionEl.value = "";
     await loadTodayRecords();
   } catch (error) {
@@ -378,8 +405,7 @@ async function registerAttendance() {
     setMessage("error", error.message || "Ocurrió un problema inesperado al registrar el marcaje.");
   } finally {
     isSubmitting = false;
-    btnRegistrar.disabled = false;
-    btnRegistrar.textContent = "Registrar marcaje";
+    setSubmittingState(false);
     updateClockPanel();
   }
 }
@@ -390,7 +416,8 @@ function startClock() {
 }
 
 rolEl.addEventListener("change", populateNames);
-btnRegistrar.addEventListener("click", registerAttendance);
+btnRegistrarEntrada.addEventListener("click", () => registerAttendance("entrada"));
+btnRegistrarSalida.addEventListener("click", () => registerAttendance("salida"));
 btnActualizar.addEventListener("click", loadTodayRecords);
 
 populateNames();
