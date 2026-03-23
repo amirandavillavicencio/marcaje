@@ -41,8 +41,7 @@ const BLOCKS = [
 const rolEl = document.getElementById("rol");
 const nombreEl = document.getElementById("nombre");
 const observacionEl = document.getElementById("observacion");
-const btnRegistrarEntrada = document.getElementById("btnRegistrarEntrada");
-const btnRegistrarSalida = document.getElementById("btnRegistrarSalida");
+const btnRegistrar = document.getElementById("btnRegistrar");
 const btnActualizar = document.getElementById("btnActualizar");
 const mensajeEl = document.getElementById("mensaje");
 const listaRegistrosEl = document.getElementById("listaRegistros");
@@ -236,21 +235,17 @@ function renderRecords(records) {
       const observation = record.observacion
         ? `<p class="registro-observacion">${escapeHtml(record.observacion)}</p>`
         : "";
-      const horaEntrada = record.hora_entrada || record.hora;
-      const estadoEntrada = record.estado_entrada || record.estado || "Sin estado";
-      const horaSalida = record.hora_salida ? formatStoredTime(record.hora_salida) : "Sin salida";
 
       return `
         <article class="registro">
           <div class="registro-top">
             <strong>${escapeHtml(record.nombre)}</strong>
-            <span class="registro-hora">Entrada: ${escapeHtml(formatStoredTime(horaEntrada))}</span>
+            <span class="registro-hora">${escapeHtml(formatStoredTime(record.hora))}</span>
           </div>
           <div class="registro-meta">
             <span>${escapeHtml(record.rol)}</span>
             <span>${escapeHtml(record.bloque)}</span>
-            <span>Salida: ${escapeHtml(horaSalida)}</span>
-            <span class="badge ${estadoEntrada === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(estadoEntrada)}</span>
+            <span class="badge ${record.estado === "presente" ? "badge-ok" : "badge-warn"}">${escapeHtml(record.estado)}</span>
           </div>
           ${observation}
         </article>
@@ -272,9 +267,9 @@ async function loadTodayRecords() {
     const fecha = getFechaLocal();
     const { data, error } = await supabase
       .from("marcaje_personal")
-      .select("id, nombre, rol, bloque, hora, hora_entrada, hora_salida, estado, estado_entrada, observacion")
+      .select("nombre, rol, bloque, estado, hora, observacion")
       .eq("fecha", fecha)
-      .order("hora_entrada", { ascending: false });
+      .order("hora", { ascending: false });
 
     if (error) {
       throw error;
@@ -290,60 +285,43 @@ async function loadTodayRecords() {
   }
 }
 
-function setSubmittingState(isActive, button, loadingText, defaultText) {
-  isSubmitting = isActive;
-  btnRegistrarEntrada.disabled = isActive;
-  btnRegistrarSalida.disabled = isActive;
-  if (button) {
-    button.textContent = isActive ? loadingText : defaultText;
-  }
-}
-
-function validateSelection() {
-  const role = rolEl.value;
-  const name = nombreEl.value;
-
-  if (!role) {
-    setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
-    rolEl.focus();
-    return null;
-  }
-
-  if (nombreEl.disabled) {
-    setMessage("error", "No hay nombres disponibles para el rol seleccionado.");
-    return null;
-  }
-
-  if (!name) {
-    setMessage("error", "Selecciona una persona antes de registrar el marcaje.");
-    nombreEl.focus();
-    return null;
-  }
-
-  return { role, name };
-}
-
 async function registerAttendance() {
   if (isSubmitting) {
     return;
   }
 
-  const selection = validateSelection();
-  if (!selection) {
-    return;
-  }
-
-  const { role, name } = selection;
+  const role = rolEl.value;
+  const name = nombreEl.value;
   const observation = observacionEl.value.trim();
   const now = new Date();
   const fecha = getFechaLocal(now);
   const hora = now.toISOString();
   const horaVisible = formatHora(now);
   const detectedAttendance = getDetectedAttendance(now);
+
+  if (!role) {
+    setMessage("error", "Selecciona un rol antes de registrar el marcaje.");
+    rolEl.focus();
+    return;
+  }
+
+  if (nombreEl.disabled) {
+    setMessage("error", "No hay nombres disponibles para el rol seleccionado.");
+    return;
+  }
+
+  if (!name) {
+    setMessage("error", "Selecciona una persona antes de registrar el marcaje.");
+    nombreEl.focus();
+    return;
+  }
+
   const blockName = detectedAttendance.blockName;
   const status = detectedAttendance.status;
 
-  setSubmittingState(true, btnRegistrarEntrada, "Registrando entrada...", "Registrar entrada");
+  isSubmitting = true;
+  btnRegistrar.disabled = true;
+  btnRegistrar.textContent = "Registrando...";
   setMessage("info", `Validando registro para ${name} en el bloque ${blockName}...`);
 
   try {
@@ -375,10 +353,8 @@ async function registerAttendance() {
         fecha,
         bloque: blockName,
         estado: status,
-        estado_entrada: status,
         observacion: observation,
         hora,
-        hora_entrada: hora,
         registrado_por: "recepcion"
       }
     ]);
@@ -390,10 +366,10 @@ async function registerAttendance() {
     setMessage(
       "success",
       detectedAttendance.isOutsideBlock
-        ? `Entrada registrada correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
+        ? `Marcaje registrado correctamente para ${name} fuera de bloque. Estado asignado: presente. Hora: ${horaVisible}.`
         : status === "atrasado"
-          ? `Entrada registrada correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
-          : `Entrada registrada correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
+          ? `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: atrasado. Hora: ${horaVisible}.`
+          : `Marcaje registrado correctamente para ${name}. Bloque detectado: ${blockName}. Estado detectado: presente. Hora: ${horaVisible}.`
     );
     observacionEl.value = "";
     await loadTodayRecords();
@@ -401,68 +377,9 @@ async function registerAttendance() {
     console.error(error);
     setMessage("error", error.message || "Ocurrió un problema inesperado al registrar el marcaje.");
   } finally {
-    setSubmittingState(false, btnRegistrarEntrada, "Registrando entrada...", "Registrar entrada");
-    updateClockPanel();
-  }
-}
-
-async function registerExit() {
-  if (isSubmitting) {
-    return;
-  }
-
-  const selection = validateSelection();
-  if (!selection) {
-    return;
-  }
-
-  const { role, name } = selection;
-  const now = new Date();
-  const fecha = getFechaLocal(now);
-  const horaSalida = now.toISOString();
-  const horaVisible = formatHora(now);
-
-  setSubmittingState(true, btnRegistrarSalida, "Registrando salida...", "Registrar salida");
-  setMessage("info", `Buscando entrada abierta para ${name}...`);
-
-  try {
-    const { data: existingRecords, error: searchError } = await supabase
-      .from("marcaje_personal")
-      .select("id, hora_entrada, hora_salida")
-      .eq("nombre", name)
-      .eq("rol", role)
-      .eq("fecha", fecha)
-      .order("hora_entrada", { ascending: false });
-
-    if (searchError) {
-      throw new Error("No fue posible buscar la entrada registrada para cerrar.");
-    }
-
-    const openRecord = (existingRecords || []).find((record) => record.hora_entrada && !record.hora_salida);
-    const closedRecord = (existingRecords || []).find((record) => record.hora_entrada && record.hora_salida);
-
-    if (!openRecord) {
-      setMessage("error", closedRecord ? "La salida ya fue registrada" : "No hay una entrada registrada para cerrar");
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from("marcaje_personal")
-      .update({ hora_salida: horaSalida })
-      .eq("id", openRecord.id)
-      .is("hora_salida", null);
-
-    if (updateError) {
-      throw new Error("Supabase no pudo registrar la salida. Revisa la conexión e intenta nuevamente.");
-    }
-
-    setMessage("success", `Salida registrada correctamente para ${name}. Hora: ${horaVisible}.`);
-    await loadTodayRecords();
-  } catch (error) {
-    console.error(error);
-    setMessage("error", error.message || "Ocurrió un problema inesperado al registrar la salida.");
-  } finally {
-    setSubmittingState(false, btnRegistrarSalida, "Registrando salida...", "Registrar salida");
+    isSubmitting = false;
+    btnRegistrar.disabled = false;
+    btnRegistrar.textContent = "Registrar marcaje";
     updateClockPanel();
   }
 }
@@ -473,8 +390,7 @@ function startClock() {
 }
 
 rolEl.addEventListener("change", populateNames);
-btnRegistrarEntrada.addEventListener("click", registerAttendance);
-btnRegistrarSalida.addEventListener("click", registerExit);
+btnRegistrar.addEventListener("click", registerAttendance);
 btnActualizar.addEventListener("click", loadTodayRecords);
 
 populateNames();
