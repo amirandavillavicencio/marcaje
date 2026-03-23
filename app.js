@@ -421,6 +421,18 @@ async function loadTodayRecords() {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function refreshRecordsAfterUpdate() {
+  await loadTodayRecords();
+  await wait(300);
+  await loadTodayRecords();
+}
+
 async function registerAttendance() {
   if (isSubmitting) {
     return;
@@ -513,7 +525,7 @@ async function registerAttendance() {
         : `Entrada registrada con éxito para ${name}. Bloque detectado: ${blockName}. Estado detectado: ${status}. Hora: ${horaVisible}.`
     );
     observacionEl.value = "";
-    await loadTodayRecords();
+    await refreshRecordsAfterUpdate();
   } catch (error) {
     console.error(error);
     setMessage("error", error.message || "Supabase devolvió un error al registrar la entrada. Intenta nuevamente.");
@@ -636,7 +648,7 @@ async function registerExit(recordId = null, recordName = null) {
     }
 
     setMessage("success", `Salida registrada con éxito para ${name}. Se actualizó el registro seleccionado del día. Hora: ${horaVisible}.`);
-    await loadTodayRecords();
+    await refreshRecordsAfterUpdate();
   } catch (error) {
     console.error(error);
     setMessage("error", error.message || "Supabase devolvió un error al registrar la salida. Intenta nuevamente.");
